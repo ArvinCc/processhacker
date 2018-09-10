@@ -27,9 +27,12 @@ ULONG KphpGetCopyExceptionInfo(
     _Out_ PULONG_PTR BadAddress
     );
 
+VOID TransactionCommitIpi(TransactionCommitCallback callback, void *context);
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, KphCopyVirtualMemory)
 #pragma alloc_text(PAGE, KpiReadVirtualMemoryUnsafe)
+#pragma alloc_text(PAGE, KpiQueryVirtualMemory)
 #endif
 
 #define KPH_STACK_COPY_BYTES 0x200
@@ -297,6 +300,77 @@ NTSTATUS KphCopyVirtualMemory(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS ReadKernelMemory(PVOID pDestination, PVOID pSourceAddress, SIZE_T SizeOfCopy, PSIZE_T ActuallyCopy)
+{
+	PVOID InVA = PAGE_ALIGN(pSourceAddress);
+	ULONG_PTR OffsetVA = (ULONG_PTR)pSourceAddress - (ULONG_PTR)InVA;
+	PVOID OutVA = pDestination;
+	SIZE_T CopySize = min(PAGE_SIZE - OffsetVA, SizeOfCopy);
+	SIZE_T TotalReadBytes = 0;
+	SIZE_T ActuallyRead = 0;
+	BOOLEAN bRead = FALSE;
+	while (TotalReadBytes < SizeOfCopy)
+	{
+		if (MmIsAddressValid(InVA))
+		{
+			PHYSICAL_ADDRESS InPA = MmGetPhysicalAddress(InVA);
+			if (!UtilIsDeviceMemory(InPA.QuadPart))
+			{
+				RtlCopyMemory(OutVA, (PVOID)((ULONG_PTR)InVA + OffsetVA), CopySize);
+				ActuallyRead += CopySize;
+				bRead = TRUE;
+			}
+		}
+		if (!bRead) {
+			RtlZeroMemory(OutVA, CopySize);
+		}
+		OffsetVA = 0;
+		OutVA = (PVOID)((ULONG_PTR)OutVA + CopySize);
+		InVA = (PVOID)((ULONG_PTR)InVA + PAGE_SIZE);
+		TotalReadBytes += CopySize;
+		CopySize = min(PAGE_SIZE, SizeOfCopy - TotalReadBytes);
+	}
+	if (ActuallyCopy)
+		*ActuallyCopy = ActuallyRead;
+
+	if (!ActuallyRead)
+		return STATUS_ACCESS_VIOLATION;
+
+	if (ActuallyRead < TotalReadBytes)
+		return STATUS_PARTIAL_COPY;
+
+	return STATUS_SUCCESS;
+}
+
+typedef struct
+{
+	PVOID SrcAddress;
+	PVOID DstAddress;
+	SIZE_T SizeOfCopy;
+	PSIZE_T ActuallyCopy;
+	NTSTATUS status;
+}SafeReadKernelMemoryContext;
+
+void SafeReadKernelMemoryProxy(void *context)
+{
+	SafeReadKernelMemoryContext *ctx = (SafeReadKernelMemoryContext *)context;
+	ctx->status = ReadKernelMemory(ctx->DstAddress, ctx->SrcAddress, ctx->SizeOfCopy, ctx->ActuallyCopy);
+}
+
+NTSTATUS SafeReadKernelMemory(PVOID Destination, PVOID SourceAddress, SIZE_T SizeOfCopy, PSIZE_T ActuallyCopy)
+{
+	SafeReadKernelMemoryContext ctx;
+	ctx.SrcAddress = SourceAddress;
+	ctx.DstAddress = Destination;
+	ctx.SizeOfCopy = SizeOfCopy;
+	ctx.ActuallyCopy = ActuallyCopy;
+	ctx.status = STATUS_UNSUCCESSFUL;
+
+	TransactionCommitIpi(SafeReadKernelMemoryProxy, &ctx);
+
+	return ctx.status;
+}
+
 /**
  * Copies process or kernel memory into the current process.
  *
@@ -362,34 +436,7 @@ NTSTATUS KpiReadVirtualMemoryUnsafe(
             ULONG_PTR page;
             ULONG_PTR pageEnd;
 
-            status = KphValidateAddressForSystemModules(BaseAddress, BufferSize);
-
-            if (!NT_SUCCESS(status))
-                return status;
-
-            // Kernel memory copy (unsafe)
-
-            page = (ULONG_PTR)BaseAddress & ~(PAGE_SIZE - 1);
-            pageEnd = ((ULONG_PTR)BaseAddress + BufferSize - 1) & ~(PAGE_SIZE - 1);
-
-            __try
-            {
-                // This will obviously fail if any of the pages aren't resident.
-                for (; page <= pageEnd; page += PAGE_SIZE)
-                {
-                    if (!MmIsAddressValid((PVOID)page))
-                        ExRaiseStatus(STATUS_ACCESS_VIOLATION);
-                }
-
-                memcpy(Buffer, BaseAddress, BufferSize);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                return GetExceptionCode();
-            }
-
-            numberOfBytesRead = BufferSize;
-            status = STATUS_SUCCESS;
+            status = SafeReadKernelMemory(Buffer, BaseAddress, BufferSize, &numberOfBytesRead);
         }
         else
         {
@@ -446,4 +493,139 @@ NTSTATUS KpiReadVirtualMemoryUnsafe(
     }
 
     return status;
+}
+
+NTSTATUS KpiQueryVirtualMemory(
+	_In_opt_ HANDLE ProcessHandle,
+	_In_ PVOID BaseAddress,
+	_In_ MEMORY_INFORMATION_CLASS MemoryInformationClass,
+	_Out_writes_bytes_(MemoryInformationLength) PVOID MemoryInformation,
+	_In_ SIZE_T MemoryInformationLength,
+	_Out_opt_ PSIZE_T ReturnLength,
+	_In_opt_ KPH_KEY Key,
+	_In_ PKPH_CLIENT Client,
+	_In_ KPROCESSOR_MODE AccessMode
+)
+{
+	NTSTATUS status;
+	PEPROCESS process;
+	SIZE_T numberOfBytesRead = 0;
+
+	PAGED_CODE();
+
+	if (!NT_SUCCESS(status = KphValidateKey(KphKeyLevel1, Key, Client, AccessMode)))
+		return status;
+
+	if (AccessMode != KernelMode)
+	{
+		if ((ULONG_PTR)MemoryInformation + MemoryInformationLength >(ULONG_PTR)MmHighestUserAddress)
+		{
+			return STATUS_ACCESS_VIOLATION;
+		}
+
+		if (ReturnLength)
+		{
+			__try
+			{
+				ProbeForWrite(ReturnLength, sizeof(SIZE_T), sizeof(SIZE_T));
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER)
+			{
+				return GetExceptionCode();
+			}
+		}
+	}
+
+	if (MemoryInformationLength != 0)
+	{
+		status = ObReferenceObjectByHandle(
+			ProcessHandle,
+			PROCESS_QUERY_LIMITED_INFORMATION,
+			*PsProcessType,
+			AccessMode,
+			&process,
+			NULL
+		);
+
+		if (NT_SUCCESS(status))
+		{
+			if (AccessMode != KernelMode)
+			{
+				PVOID LockedBuffer = NULL;
+				PVOID LockMdl = NULL;
+				status = ExLockUserBuffer(MemoryInformation, (ULONG)MemoryInformationLength, ExGetPreviousMode(), IoWriteAccess, &LockedBuffer, &LockMdl);
+				if (status == STATUS_SUCCESS)
+				{
+					KAPC_STATE apcState;
+					KeStackAttachProcess(process, &apcState);
+
+					status = ZwQueryVirtualMemory(
+						NtCurrentProcess(),
+						BaseAddress,
+						MemoryInformationClass,
+						LockedBuffer,
+						MemoryInformationLength,
+						&numberOfBytesRead
+					);
+
+					KeUnstackDetachProcess(&apcState);
+
+					//fix unicode string buffer
+					if (MemoryInformationClass == MemoryMappedFilenameInformation && numberOfBytesRead >= sizeof(UNICODE_STRING))
+					{
+						PUNICODE_STRING ustr = (PUNICODE_STRING)LockedBuffer;
+						ULONG_PTR BufferRva = (PUCHAR)ustr->Buffer - (PUCHAR)LockedBuffer;
+						ustr->Buffer = (PWCH)((PUCHAR)MemoryInformation + BufferRva);
+					}
+
+					ExUnlockUserBuffer(LockMdl);
+				}
+			}
+			else
+			{
+				KAPC_STATE apcState;
+				KeStackAttachProcess(process, &apcState);
+
+				status = ZwQueryVirtualMemory(
+					NtCurrentProcess(),
+					BaseAddress,
+					MemoryInformationClass,
+					MemoryInformation,
+					MemoryInformationLength,
+					&numberOfBytesRead
+				);
+
+				KeUnstackDetachProcess(&apcState);
+			}
+
+			ObDereferenceObject(process);
+		}
+	}
+	else
+	{
+		numberOfBytesRead = 0;
+		status = STATUS_SUCCESS;
+	}
+
+	if (ReturnLength)
+	{
+		if (AccessMode != KernelMode)
+		{
+			__try
+			{
+				*ReturnLength = numberOfBytesRead;
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER)
+			{
+				// Don't mess with the status.
+				NOTHING;
+			}
+		}
+		else
+		{
+			*ReturnLength = numberOfBytesRead;
+		}
+	}
+
+	return status;
 }

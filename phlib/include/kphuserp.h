@@ -48,6 +48,19 @@ NTSTATUS KphpGetL1Key(
     _Out_ PKPH_KEY Key
     );
 
+// Query vm
+
+typedef struct _KPH_QUERY_VM_INPUT
+{
+    HANDLE ProcessHandle;
+    PVOID BaseAddress;
+    MEMORY_INFORMATION_CLASS MemoryInformationClass;
+    PVOID MemoryInformation;
+    SIZE_T MemoryInformationLength;
+    PSIZE_T ReturnLength;
+    KPH_KEY Key;
+} KPH_QUERY_VM_INPUT, *PKPH_QUERY_VM_INPUT;
+
 // Open process
 
 typedef struct _KPH_OPEN_PROCESS_INPUT

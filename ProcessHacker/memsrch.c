@@ -223,7 +223,7 @@ VOID PhSearchMemoryString(
         return;
     }
 
-    while (NT_SUCCESS(NtQueryVirtualMemory(
+    while (NT_SUCCESS(PhQueryVirtualMemory(
         ProcessHandle,
         baseAddress,
         MemoryBasicInformation,

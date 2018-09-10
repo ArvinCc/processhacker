@@ -632,7 +632,7 @@ NTSTATUS PhpUpdateMemoryWsCounters(
                 virtualAddress += PAGE_SIZE;
             }
 
-            if (NT_SUCCESS(NtQueryVirtualMemory(
+            if (NT_SUCCESS(PhQueryVirtualMemory(
                 ProcessHandle,
                 NULL,
                 MemoryWorkingSetExInformation,
@@ -748,7 +748,7 @@ NTSTATUS PhQueryMemoryItemList(
 
     allocationGranularity = PhSystemBasicInformation.AllocationGranularity;
 
-    while (NT_SUCCESS(NtQueryVirtualMemory(
+    while (NT_SUCCESS(PhQueryVirtualMemory(
         processHandle,
         baseAddress,
         MemoryBasicInformation,

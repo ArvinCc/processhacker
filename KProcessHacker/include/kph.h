@@ -371,4 +371,54 @@ NTSTATUS KpiReadVirtualMemoryUnsafe(
     _In_ KPROCESSOR_MODE AccessMode
     );
 
+NTSTATUS KpiQueryVirtualMemory(
+	_In_opt_ HANDLE ProcessHandle,
+	_In_ PVOID BaseAddress,
+	_In_ MEMORY_INFORMATION_CLASS MemoryInformationClass,
+	_Out_writes_bytes_(MemoryInformationLength) PVOID MemoryInformation,
+	_In_ SIZE_T MemoryInformationLength,
+	_Out_opt_ PSIZE_T ReturnLength,
+	_In_opt_ KPH_KEY Key,
+	_In_ PKPH_CLIENT Client,
+	_In_ KPROCESSOR_MODE AccessMode
+);
+
+typedef void(*TransactionCommitCallback)(void *context);
+
+/// Represents ranges of addresses
+typedef struct  {
+	ULONG_PTR base_page;   //!< A base address / PAGE_SIZE (ie, 0x1 for 0x1000)
+	ULONG_PTR page_count;  //!< A number of pages
+}PhysicalMemoryRun;
+
+/// Represents a physical memory ranges of the system
+typedef struct {
+	PFN_COUNT number_of_runs;    //!< A number of PhysicalMemoryDescriptor::run
+	PFN_NUMBER number_of_pages;  //!< A physical memory size in pages
+	PhysicalMemoryRun run[1];    //!< ranges of addresses
+}PhysicalMemoryDescriptor;
+
+// Returns the physical memory ranges
+/*_Use_decl_annotations_*/ const PhysicalMemoryDescriptor *
+UtilGetPhysicalMemoryRanges();
+
+_Use_decl_annotations_ BOOLEAN UtilIsDeviceMemory(
+	ULONG64 physical_address); 
+
+_Use_decl_annotations_ PhysicalMemoryDescriptor *
+UtilpBuildPhysicalMemoryRanges();
+
+VOID ExUnlockUserBuffer(
+	__inout PVOID LockVariable
+);
+
+NTSTATUS ExLockUserBuffer(
+	__inout_bcount(Length) PVOID Buffer,
+	__in ULONG Length,
+	__in KPROCESSOR_MODE ProbeMode,
+	__in LOCK_OPERATION LockMode,
+	__deref_out PVOID *LockedBuffer,
+	__deref_out PVOID *LockVariable
+);
+
 #endif

@@ -70,6 +70,8 @@ NTSTATUS DriverEntry(
 
     KphDynamicImport();
 
+	UtilpBuildPhysicalMemoryRanges();
+
     if (!NT_SUCCESS(status = KphpReadDriverParameters(RegistryPath)))
         return status;
 

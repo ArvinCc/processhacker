@@ -29,6 +29,8 @@
 #pragma alloc_text(PAGE, KphGetProcessMappedFileName)
 #endif
 
+static PhysicalMemoryDescriptor *g_utilp_physical_memory_ranges;
+
 VOID KphFreeCapturedUnicodeString(
     _In_ PUNICODE_STRING CapturedUnicodeString
     )
@@ -269,4 +271,236 @@ NTSTATUS KphGetProcessMappedFileName(
     *FileName = buffer;
 
     return status;
+}
+
+typedef struct _KIPICALL_CONTEXT
+{
+	ULONG		   ProcessorId;
+	volatile LONG  RunningProcessor;
+	volatile LONG  ProcessorsToResume;
+	ULONG		   Done;
+	TransactionCommitCallback Callback;
+	PVOID		   Params;
+}KIPICALL_CONTEXT, *PKIPICALL_CONTEXT;
+
+ULONG_PTR TransactionCommitIpiCaster(ULONG_PTR Argument)
+{
+	PKIPICALL_CONTEXT context = (PKIPICALL_CONTEXT)Argument;
+	if (KeGetCurrentProcessorNumber() != context->ProcessorId)
+	{
+		InterlockedDecrement(&context->RunningProcessor);
+		while (context->Done == FALSE)
+			YieldProcessor();
+		InterlockedDecrement(&context->ProcessorsToResume);
+	}
+	else
+	{
+		while (context->RunningProcessor != 0)
+			YieldProcessor();
+
+		context->Callback(context->Params);
+
+		context->Done = TRUE;
+
+		while (context->ProcessorsToResume != 0)
+			YieldProcessor();
+	}
+	return 0;
+}
+
+VOID TransactionCommitIpi(TransactionCommitCallback callback, void *context)
+{
+	PKIPICALL_CONTEXT ctx = (PKIPICALL_CONTEXT)ExAllocatePool(NonPagedPool, sizeof(KIPICALL_CONTEXT));
+
+	ctx->ProcessorId = KeGetCurrentProcessorNumber();
+	ctx->RunningProcessor = KeQueryActiveProcessorCount(NULL) - 1;
+	ctx->ProcessorsToResume = KeQueryActiveProcessorCount(NULL) - 1;
+	ctx->Callback = callback;
+	ctx->Params = context;
+	ctx->Done = FALSE;
+
+	KeIpiGenericCall(TransactionCommitIpiCaster, (ULONG_PTR)ctx);
+
+	ExFreePool(ctx);
+}
+
+// VA -> PA
+_Use_decl_annotations_ ULONG64 UtilPaFromVa(void *va) {
+	const PHYSICAL_ADDRESS pa = MmGetPhysicalAddress(va);
+	return pa.QuadPart;
+}
+
+// PA -> PFN
+_Use_decl_annotations_ PFN_NUMBER UtilPfnFromPa(ULONG64 pa) {
+	return (PFN_NUMBER)(pa >> PAGE_SHIFT);
+}
+
+// VA -> PFN
+_Use_decl_annotations_ PFN_NUMBER UtilPfnFromVa(void *va) {
+	return UtilPfnFromPa(UtilPaFromVa(va));
+}
+
+// PA -> VA
+_Use_decl_annotations_ void *UtilVaFromPa(ULONG64 pa) {
+	PHYSICAL_ADDRESS pa2 = {0};
+	pa2.QuadPart = pa;
+	return MmGetVirtualForPhysical(pa2);
+}
+
+// PNF -> PA
+_Use_decl_annotations_ ULONG64 UtilPaFromPfn(PFN_NUMBER pfn) {
+	return pfn << PAGE_SHIFT;
+}
+
+// PFN -> VA
+_Use_decl_annotations_ void *UtilVaFromPfn(PFN_NUMBER pfn) {
+	return UtilVaFromPa(UtilPaFromPfn(pfn));
+}
+
+// Builds the physical memory ranges
+_Use_decl_annotations_ PhysicalMemoryDescriptor *
+UtilpBuildPhysicalMemoryRanges() {
+	PAGED_CODE();
+
+	PPHYSICAL_MEMORY_RANGE pm_ranges = MmGetPhysicalMemoryRanges();
+	if (!pm_ranges) {
+		return NULL;
+	}
+
+	PFN_COUNT number_of_runs = 0;
+	PFN_NUMBER number_of_pages = 0;
+	for (/**/; /**/; ++number_of_runs) {
+		const PPHYSICAL_MEMORY_RANGE range = &pm_ranges[number_of_runs];
+		if (!range->BaseAddress.QuadPart && !range->NumberOfBytes.QuadPart) {
+			break;
+		}
+		number_of_pages += (PFN_NUMBER)(BYTES_TO_PAGES(range->NumberOfBytes.QuadPart));
+	}
+	if (number_of_runs == 0) {
+		ExFreePoolWithTag(pm_ranges, 'hPmM');
+		return NULL;
+	}
+
+	int memory_block_size =
+		sizeof(PhysicalMemoryDescriptor) +
+		sizeof(PhysicalMemoryRun) * (number_of_runs - 1);
+	
+	PhysicalMemoryDescriptor * pm_block = (PhysicalMemoryDescriptor *)(ExAllocatePool(
+			NonPagedPool, memory_block_size));
+	if (!pm_block) {
+		ExFreePoolWithTag(pm_ranges, 'hPmM');
+		return NULL;
+	}
+	RtlZeroMemory(pm_block, memory_block_size);
+
+	pm_block->number_of_runs = number_of_runs;
+	pm_block->number_of_pages = number_of_pages;
+
+	for (ULONG_PTR run_index = 0ul; run_index < number_of_runs; run_index++) {
+		PhysicalMemoryRun *current_run = &pm_block->run[run_index];
+		PPHYSICAL_MEMORY_RANGE current_block = &pm_ranges[run_index];
+		current_run->base_page = (ULONG_PTR)(UtilPfnFromPa(current_block->BaseAddress.QuadPart));
+		current_run->page_count = (ULONG_PTR)(BYTES_TO_PAGES(current_block->NumberOfBytes.QuadPart));
+	}
+
+	ExFreePoolWithTag(pm_ranges, 'hPmM');
+	return pm_block;
+}
+
+// Returns the physical memory ranges
+/*_Use_decl_annotations_*/ const PhysicalMemoryDescriptor *
+UtilGetPhysicalMemoryRanges() {
+	return g_utilp_physical_memory_ranges;
+}
+
+BOOLEAN UtilIsInBounds(_In_ const ULONG64 value, _In_ const ULONG64 min,
+	_In_ const ULONG64 max) {
+	return (min <= value) && (value <= max);
+}
+
+// Returns if the physical_address is device memory (which could not have a
+// corresponding PFN entry)
+_Use_decl_annotations_ BOOLEAN UtilIsDeviceMemory(
+	ULONG64 physical_address) {
+	const PhysicalMemoryDescriptor *pm_ranges = UtilGetPhysicalMemoryRanges();
+	for (ULONG_PTR i = 0ul; i < pm_ranges->number_of_runs; ++i) {
+		const PhysicalMemoryRun *current_run = &pm_ranges->run[i];
+		ULONG64 base_addr = (ULONG64)(current_run->base_page) * PAGE_SIZE;
+		ULONG64 endAddr = base_addr + current_run->page_count * PAGE_SIZE - 1;
+		if (UtilIsInBounds(physical_address, base_addr, endAddr)) {
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+VOID ExUnlockUserBuffer(
+	__inout PVOID LockVariable
+)
+{
+	MmUnlockPages((PMDL)LockVariable);
+	ExFreePool((PMDL)LockVariable);
+	return;
+}
+
+NTSTATUS ExLockUserBuffer(
+	__inout_bcount(Length) PVOID Buffer,
+	__in ULONG Length,
+	__in KPROCESSOR_MODE ProbeMode,
+	__in LOCK_OPERATION LockMode,
+	__deref_out PVOID *LockedBuffer,
+	__deref_out PVOID *LockVariable
+)
+{
+	PMDL Mdl;
+	SIZE_T MdlSize;
+
+	//
+	// It is the caller's responsibility to ensure zero cannot be passed in.
+	//
+
+	ASSERT(Length != 0);
+
+	*LockedBuffer = NULL;
+	*LockVariable = NULL;
+
+	//
+	// Allocate an MDL to map the request.
+	//
+
+	MdlSize = MmSizeOfMdl(Buffer, Length);
+	Mdl = (PMDL)ExAllocatePoolWithQuotaTag((POOL_TYPE)((int)NonPagedPool | POOL_QUOTA_FAIL_INSTEAD_OF_RAISE),
+		MdlSize,
+		'ofnI');
+	if (Mdl == NULL) {
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+
+	//
+	// Initialize MDL for request.
+	//
+
+	MmInitializeMdl(Mdl, Buffer, Length);
+
+	__try {
+
+		MmProbeAndLockPages(Mdl, ProbeMode, LockMode);
+
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+
+		ExFreePool(Mdl);
+
+		return GetExceptionCode();
+	}
+
+	Mdl->MdlFlags |= MDL_MAPPING_CAN_FAIL;
+	*LockedBuffer = MmGetSystemAddressForMdlSafe(Mdl, HighPagePriority);
+	if (*LockedBuffer == NULL) {
+		ExUnlockUserBuffer(Mdl);
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+
+	*LockVariable = Mdl;
+	return STATUS_SUCCESS;
 }

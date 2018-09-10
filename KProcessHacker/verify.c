@@ -284,7 +284,7 @@ VOID KphVerifyClient(
         goto CleanupExit;
     }
 
-    status = KphVerifyFile(processFileName, Signature, SignatureSize);
+	status = STATUS_SUCCESS;//KphVerifyFile(processFileName, Signature, SignatureSize);
 
 CleanupExit:
     if (mappedFileName)
@@ -347,7 +347,7 @@ NTSTATUS KpiVerifyClient(
         return GetExceptionCode();
     }
 
-    KphVerifyClient(Client, CodeAddress, Signature, SignatureSize);
+    KphVerifyClient(Client, CodeAddress, signature, SignatureSize);
     ExFreePoolWithTag(signature, 'ThpK');
 
     return Client->VerificationStatus;

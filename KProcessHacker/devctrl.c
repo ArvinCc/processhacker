@@ -331,6 +331,34 @@ NTSTATUS KphDispatchDeviceControl(
                 );
         }
         break;
+	case KPH_QUERYVIRTUALMEMORY:
+	{
+		struct
+		{
+			HANDLE ProcessHandle;
+			PVOID BaseAddress;
+			MEMORY_INFORMATION_CLASS MemoryInformationClass;
+			PVOID MemoryInformation;
+			SIZE_T MemoryInformationLength;
+			PSIZE_T ReturnLength;
+			KPH_KEY Key;
+		} *input = capturedInputPointer;
+
+		VERIFY_INPUT_LENGTH;
+
+		status = KpiQueryVirtualMemory(
+			input->ProcessHandle,
+			input->BaseAddress,
+			input->MemoryInformationClass,
+			input->MemoryInformation,
+			input->MemoryInformationLength,
+			input->ReturnLength,
+			input->Key,
+			client,
+			accessMode
+		);
+	}
+	break;
     case KPH_OPENTHREAD:
         {
             struct
