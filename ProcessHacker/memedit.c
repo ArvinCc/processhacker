@@ -232,7 +232,7 @@ INT_PTR CALLBACK PhpMemoryEditorDlgProc(
                 return TRUE;
             }
 
-            if (!NT_SUCCESS(status = NtReadVirtualMemory(
+            if (!NT_SUCCESS(status = PhReadVirtualMemory(
                 context->ProcessHandle,
                 context->BaseAddress,
                 context->Buffer,
@@ -493,7 +493,7 @@ INT_PTR CALLBACK PhpMemoryEditorDlgProc(
                 {
                     NTSTATUS status;
 
-                    if (!NT_SUCCESS(status = NtReadVirtualMemory(
+                    if (!NT_SUCCESS(status = PhReadVirtualMemory(
                         context->ProcessHandle,
                         context->BaseAddress,
                         context->Buffer,

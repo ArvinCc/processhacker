@@ -277,7 +277,7 @@ VOID PhSearchMemoryString(
             BOOLEAN printable2;
             ULONG length;
 
-            if (!NT_SUCCESS(NtReadVirtualMemory(
+            if (!NT_SUCCESS(PhReadVirtualMemory(
                 ProcessHandle,
                 PTR_ADD_OFFSET(baseAddress, offset),
                 buffer,
