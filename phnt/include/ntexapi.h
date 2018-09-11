@@ -2331,7 +2331,7 @@ typedef struct _SYSTEM_PROCESS_ID_INFORMATION
 typedef struct _SYSTEM_BOOT_ENVIRONMENT_INFORMATION
 {
     GUID BootIdentifier;
-    FIRMWARE_TYPE FirmwareType;
+    ULONG FirmwareType;
     union
     {
         ULONGLONG BootFlags;
