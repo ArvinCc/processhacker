@@ -283,7 +283,7 @@ BOOLEAN PhpMemoryTreeFilterCallback(
             return TRUE;
     }
     
-    tempString = PhGetMemoryTypeString(memoryItem->Type);
+    tempString = PhGetMemoryTypeString(memoryItem);
     if (tempString[0])
     {
         if (PhpWordMatchHandleStringZ(memoryContext->SearchboxText, tempString))

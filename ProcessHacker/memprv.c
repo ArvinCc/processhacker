@@ -110,15 +110,17 @@ PWSTR PhGetMemoryStateString(
 }
 
 PWSTR PhGetMemoryTypeString(
-    _In_ ULONG Type
+    _In_ PPH_MEMORY_ITEM Item
     )
 {
-    if (Type & MEM_PRIVATE)
+    if (Item->Type & MEM_PRIVATE)
         return L"Private";
-    else if (Type & MEM_MAPPED)
+    else if (Item->Type & MEM_MAPPED)
         return L"Mapped";
-    else if (Type & MEM_IMAGE)
+    else if (Item->Type & MEM_IMAGE)
         return L"Image";
+    else if(Item->RegionType >= KernelRegionBegin)
+        return L"Kernel";
     else
         return L"Unknown";
 }
@@ -712,6 +714,72 @@ NTSTATUS PhpUpdateMemoryWsCountersOld(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS PhpQueryKernelBigPoolMemoryItemList(_In_ ULONG Flags,
+    _Out_ PPH_MEMORY_ITEM_LIST List)
+{
+    ULONG cbBuffer = 0;
+    PVOID pBuffer = NULL;
+    NTSTATUS status = STATUS_INSUFFICIENT_RESOURCES;
+
+    while (1)
+    {
+        cbBuffer += 0x40000;
+        pBuffer = PhAllocate(cbBuffer);
+
+        if (pBuffer == NULL)
+        {
+            return status;
+        }
+
+        status = ZwQuerySystemInformation(SystemBigPoolInformation, pBuffer, cbBuffer, NULL);
+
+        if (NT_SUCCESS(status))
+        {
+            break;
+        }
+
+        PhFree(pBuffer);
+
+        if (status != STATUS_INFO_LENGTH_MISMATCH)
+        {
+            return status;
+        }
+    }
+
+    if (pBuffer == NULL)
+        return status;
+
+    if (NT_SUCCESS(status))
+    {
+        PSYSTEM_BIGPOOL_INFORMATION pInfo = (PSYSTEM_BIGPOOL_INFORMATION)pBuffer;
+
+        for (ULONG i = 0; i < pInfo->Count; ++i)
+        {
+            PVOID BaseAddress = (PVOID)((ULONG_PTR)pInfo->AllocatedInfo[i].VirtualAddress & ~(1));
+
+            PPH_MEMORY_ITEM otherMemoryItem;
+
+            otherMemoryItem = PhCreateMemoryItem();
+            otherMemoryItem->AllocationBase = BaseAddress;
+            otherMemoryItem->BaseAddress = BaseAddress;
+            otherMemoryItem->RegionSize = pInfo->AllocatedInfo[i].SizeInBytes;
+            otherMemoryItem->AllocationProtect = PAGE_EXECUTE_READWRITE;
+            otherMemoryItem->Protect = PAGE_EXECUTE_READWRITE;
+            otherMemoryItem->State = 0;
+            otherMemoryItem->Type = 0;
+            otherMemoryItem->RegionType = KernelBigPoolRegion;
+            otherMemoryItem->AllocationBaseItem = otherMemoryItem;
+
+            PhAddElementAvlTree(&List->Set, &otherMemoryItem->Links);
+            InsertTailList(&List->ListHead, &otherMemoryItem->ListEntry);
+        }
+    }
+
+    PhFree(pBuffer);
+
+    return status;
+}
+
 NTSTATUS PhQueryMemoryItemList(
     _In_ HANDLE ProcessId,
     _In_ ULONG Flags,
@@ -837,6 +905,10 @@ ContinueLoop:
 
     if (Flags & PH_QUERY_MEMORY_WS_COUNTERS)
         PhpUpdateMemoryWsCounters(List, processHandle);
+
+    //Enum kernel big pools
+
+    PhpQueryKernelBigPoolMemoryItemList(Flags, List);
 
     NtClose(processHandle);
 

@@ -404,6 +404,9 @@ UtilpBuildPhysicalMemoryRanges() {
 	}
 
 	ExFreePoolWithTag(pm_ranges, 'hPmM');
+
+	g_utilp_physical_memory_ranges = pm_block;
+
 	return pm_block;
 }
 

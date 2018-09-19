@@ -6,6 +6,7 @@ extern PPH_OBJECT_TYPE PhMemoryItemType;
 // begin_phapppub
 typedef enum _PH_MEMORY_REGION_TYPE
 {
+    //user
     UnknownRegion,
     CustomRegion,
     UnusableRegion,
@@ -25,6 +26,8 @@ typedef enum _PH_MEMORY_REGION_TYPE
     CfgBitmap32Region,
     ApiSetMapRegion,
     HypervisorSharedDataRegion,
+    KernelRegionBegin,
+    KernelBigPoolRegion = KernelRegionBegin,
 } PH_MEMORY_REGION_TYPE;
 
 typedef struct _PH_MEMORY_ITEM
@@ -108,7 +111,7 @@ PWSTR PhGetMemoryStateString(
     );
 
 PWSTR PhGetMemoryTypeString(
-    _In_ ULONG Type
+    _In_ PPH_MEMORY_ITEM Item
     );
 
 PPH_MEMORY_ITEM PhCreateMemoryItem(

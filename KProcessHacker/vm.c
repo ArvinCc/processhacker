@@ -431,12 +431,21 @@ NTSTATUS KpiReadVirtualMemoryUnsafe(
     if (BufferSize != 0)
     {
         // Select the appropriate copy method.
-        if ((ULONG_PTR)BaseAddress + BufferSize > (ULONG_PTR)MmHighestUserAddress)
+        if ((ULONG_PTR)BaseAddress > (ULONG_PTR)MmHighestUserAddress)
         {
-            ULONG_PTR page;
-            ULONG_PTR pageEnd;
-
-            status = SafeReadKernelMemory(Buffer, BaseAddress, BufferSize, &numberOfBytesRead);
+			if (AccessMode == UserMode)
+			{
+				PVOID LockedBuffer, LockedMdl;
+				status = ExLockUserBuffer(Buffer, (ULONG)BufferSize, KernelMode, IoWriteAccess, &LockedBuffer, &LockedMdl);
+				if (status == STATUS_SUCCESS) {
+					status = SafeReadKernelMemory(LockedBuffer, BaseAddress, BufferSize, &numberOfBytesRead);
+					ExUnlockUserBuffer(LockedMdl);
+				}
+			}
+			else
+			{
+				status = SafeReadKernelMemory(Buffer, BaseAddress, BufferSize, &numberOfBytesRead);
+			}
         }
         else
         {
