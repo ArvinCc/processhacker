@@ -516,7 +516,7 @@ NTSTATUS PhGetProcessSystemDllInitBlock(
         ldrInitBlock = PhAllocate(sizeof(PS_SYSTEM_DLL_INIT_BLOCK));
         memset(ldrInitBlock, 0, sizeof(PS_SYSTEM_DLL_INIT_BLOCK));
 
-        status = NtReadVirtualMemory(
+        status = PhReadVirtualMemory(
             ProcessHandle,
             ldrInitBlockBaseAddress,
             ldrInitBlock,

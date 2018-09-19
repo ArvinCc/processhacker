@@ -592,7 +592,7 @@ INT_PTR CALLBACK PhpMemoryResultsDlgProc(
                                 context->ProcessId
                                 )))
                             {
-                                if (NT_SUCCESS(status = NtQueryVirtualMemory(
+                                if (NT_SUCCESS(status = PhQueryVirtualMemory(
                                     processHandle,
                                     result->Address,
                                     MemoryBasicInformation,
@@ -670,7 +670,7 @@ INT_PTR CALLBACK PhpMemoryResultsDlgProc(
                                             context->ProcessId
                                             )))
                                         {
-                                            if (NT_SUCCESS(status = NtQueryVirtualMemory(
+                                            if (NT_SUCCESS(status = PhQueryVirtualMemory(
                                                 processHandle,
                                                 result->Address,
                                                 MemoryBasicInformation,

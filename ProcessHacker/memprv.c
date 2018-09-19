@@ -110,15 +110,17 @@ PWSTR PhGetMemoryStateString(
 }
 
 PWSTR PhGetMemoryTypeString(
-    _In_ ULONG Type
+    _In_ PPH_MEMORY_ITEM Item
     )
 {
-    if (Type & MEM_PRIVATE)
+    if (Item->Type & MEM_PRIVATE)
         return L"Private";
-    else if (Type & MEM_MAPPED)
+    else if (Item->Type & MEM_MAPPED)
         return L"Mapped";
-    else if (Type & MEM_IMAGE)
+    else if (Item->Type & MEM_IMAGE)
         return L"Image";
+    else if(Item->RegionType >= KernelRegionBegin)
+        return L"Kernel";
     else
         return L"Unknown";
 }
@@ -317,16 +319,16 @@ NTSTATUS PhpUpdateMemoryRegionTypes(
             // HACK: Windows 10 RS2 and above 'added TEB/PEB sub-VAD segments' and we need to tag individual sections.
             PhpSetMemoryRegionType(List, basicInfo.PebBaseAddress, WindowsVersion < WINDOWS_10_RS2 ? TRUE : FALSE, PebRegion);
 
-            if (NT_SUCCESS(NtReadVirtualMemory(ProcessHandle,
+            if (NT_SUCCESS(PhReadVirtualMemory(ProcessHandle,
                 PTR_ADD_OFFSET(basicInfo.PebBaseAddress, FIELD_OFFSET(PEB, NumberOfHeaps)),
                 &numberOfHeaps, sizeof(ULONG), NULL)) && numberOfHeaps < MAX_HEAPS)
             {
                 processHeaps = PhAllocate(numberOfHeaps * sizeof(PVOID));
 
-                if (NT_SUCCESS(NtReadVirtualMemory(ProcessHandle,
+                if (NT_SUCCESS(PhReadVirtualMemory(ProcessHandle,
                     PTR_ADD_OFFSET(basicInfo.PebBaseAddress, FIELD_OFFSET(PEB, ProcessHeaps)),
                     &processHeapsPtr, sizeof(PVOID), NULL)) &&
-                    NT_SUCCESS(NtReadVirtualMemory(ProcessHandle,
+                    NT_SUCCESS(PhReadVirtualMemory(ProcessHandle,
                     processHeapsPtr,
                     processHeaps, numberOfHeaps * sizeof(PVOID), NULL)))
                 {
@@ -341,7 +343,7 @@ NTSTATUS PhpUpdateMemoryRegionTypes(
             }
 
             // ApiSet schema map
-            if (NT_SUCCESS(NtReadVirtualMemory(
+            if (NT_SUCCESS(PhReadVirtualMemory(
                 ProcessHandle,
                 PTR_ADD_OFFSET(basicInfo.PebBaseAddress, FIELD_OFFSET(PEB, ApiSetMap)),
                 &apiSetMap,
@@ -359,16 +361,16 @@ NTSTATUS PhpUpdateMemoryRegionTypes(
             isWow64 = TRUE;
             PhpSetMemoryRegionType(List, peb32, TRUE, Peb32Region);
 
-            if (NT_SUCCESS(NtReadVirtualMemory(ProcessHandle,
+            if (NT_SUCCESS(PhReadVirtualMemory(ProcessHandle,
                 PTR_ADD_OFFSET(peb32, FIELD_OFFSET(PEB32, NumberOfHeaps)),
                 &numberOfHeaps, sizeof(ULONG), NULL)) && numberOfHeaps < MAX_HEAPS)
             {
                 processHeaps32 = PhAllocate(numberOfHeaps * sizeof(ULONG));
 
-                if (NT_SUCCESS(NtReadVirtualMemory(ProcessHandle,
+                if (NT_SUCCESS(PhReadVirtualMemory(ProcessHandle,
                     PTR_ADD_OFFSET(peb32, FIELD_OFFSET(PEB32, ProcessHeaps)),
                     &processHeapsPtr32, sizeof(ULONG), NULL)) &&
-                    NT_SUCCESS(NtReadVirtualMemory(ProcessHandle,
+                    NT_SUCCESS(PhReadVirtualMemory(ProcessHandle,
                     UlongToPtr(processHeapsPtr32),
                     processHeaps32, numberOfHeaps * sizeof(ULONG), NULL)))
                 {
@@ -383,7 +385,7 @@ NTSTATUS PhpUpdateMemoryRegionTypes(
             }
 
             // ApiSet schema map
-            if (NT_SUCCESS(NtReadVirtualMemory(
+            if (NT_SUCCESS(PhReadVirtualMemory(
                 ProcessHandle,
                 PTR_ADD_OFFSET(peb32, FIELD_OFFSET(PEB32, ApiSetMap)),
                 &apiSetMap32,
@@ -411,7 +413,7 @@ NTSTATUS PhpUpdateMemoryRegionTypes(
             if (memoryItem = PhpSetMemoryRegionType(List, thread->TebBase, WindowsVersion < WINDOWS_10_RS2 ? TRUE : FALSE, TebRegion))
                 memoryItem->u.Teb.ThreadId = thread->ThreadInfo.ClientId.UniqueThread;
 
-            if (NT_SUCCESS(NtReadVirtualMemory(ProcessHandle, thread->TebBase, &ntTib, sizeof(NT_TIB), &bytesRead)) &&
+            if (NT_SUCCESS(PhReadVirtualMemory(ProcessHandle, thread->TebBase, &ntTib, sizeof(NT_TIB), &bytesRead)) &&
                 bytesRead == sizeof(NT_TIB))
             {
                 if ((ULONG_PTR)ntTib.StackLimit < (ULONG_PTR)ntTib.StackBase)
@@ -429,7 +431,7 @@ NTSTATUS PhpUpdateMemoryRegionTypes(
                     // 64-bit and 32-bit TEBs usually share the same memory region, so don't do anything for the 32-bit
                     // TEB.
 
-                    if (NT_SUCCESS(NtReadVirtualMemory(ProcessHandle, UlongToPtr(teb32), &ntTib32, sizeof(NT_TIB32), &bytesRead)) &&
+                    if (NT_SUCCESS(PhReadVirtualMemory(ProcessHandle, UlongToPtr(teb32), &ntTib32, sizeof(NT_TIB32), &bytesRead)) &&
                         bytesRead == sizeof(NT_TIB32))
                     {
                         if (ntTib32.StackLimit < ntTib32.StackBase)
@@ -473,7 +475,7 @@ NTSTATUS PhpUpdateMemoryRegionTypes(
         {
             UCHAR buffer[HEAP_SEGMENT_MAX_SIZE];
 
-            if (NT_SUCCESS(NtReadVirtualMemory(ProcessHandle, memoryItem->BaseAddress,
+            if (NT_SUCCESS(PhReadVirtualMemory(ProcessHandle, memoryItem->BaseAddress,
                 buffer, sizeof(buffer), NULL)))
             {
                 PVOID candidateHeap = NULL;
@@ -534,7 +536,7 @@ NTSTATUS PhpUpdateMemoryRegionTypes(
 
     if (NT_SUCCESS(status) && ldrInitBlockBaseAddress)
     {
-        status = NtReadVirtualMemory(
+        status = PhReadVirtualMemory(
             ProcessHandle,
             ldrInitBlockBaseAddress,
             &ldrInitBlock,
@@ -632,7 +634,7 @@ NTSTATUS PhpUpdateMemoryWsCounters(
                 virtualAddress += PAGE_SIZE;
             }
 
-            if (NT_SUCCESS(NtQueryVirtualMemory(
+            if (NT_SUCCESS(PhQueryVirtualMemory(
                 ProcessHandle,
                 NULL,
                 MemoryWorkingSetExInformation,
@@ -712,6 +714,72 @@ NTSTATUS PhpUpdateMemoryWsCountersOld(
     return STATUS_SUCCESS;
 }
 
+NTSTATUS PhpQueryKernelBigPoolMemoryItemList(_In_ ULONG Flags,
+    _Out_ PPH_MEMORY_ITEM_LIST List)
+{
+    ULONG cbBuffer = 0;
+    PVOID pBuffer = NULL;
+    NTSTATUS status = STATUS_INSUFFICIENT_RESOURCES;
+
+    while (1)
+    {
+        cbBuffer += 0x40000;
+        pBuffer = PhAllocate(cbBuffer);
+
+        if (pBuffer == NULL)
+        {
+            return status;
+        }
+
+        status = ZwQuerySystemInformation(SystemBigPoolInformation, pBuffer, cbBuffer, NULL);
+
+        if (NT_SUCCESS(status))
+        {
+            break;
+        }
+
+        PhFree(pBuffer);
+
+        if (status != STATUS_INFO_LENGTH_MISMATCH)
+        {
+            return status;
+        }
+    }
+
+    if (pBuffer == NULL)
+        return status;
+
+    if (NT_SUCCESS(status))
+    {
+        PSYSTEM_BIGPOOL_INFORMATION pInfo = (PSYSTEM_BIGPOOL_INFORMATION)pBuffer;
+
+        for (ULONG i = 0; i < pInfo->Count; ++i)
+        {
+            PVOID BaseAddress = (PVOID)((ULONG_PTR)pInfo->AllocatedInfo[i].VirtualAddress & ~(1));
+
+            PPH_MEMORY_ITEM otherMemoryItem;
+
+            otherMemoryItem = PhCreateMemoryItem();
+            otherMemoryItem->AllocationBase = BaseAddress;
+            otherMemoryItem->BaseAddress = BaseAddress;
+            otherMemoryItem->RegionSize = pInfo->AllocatedInfo[i].SizeInBytes;
+            otherMemoryItem->AllocationProtect = PAGE_EXECUTE_READWRITE;
+            otherMemoryItem->Protect = PAGE_EXECUTE_READWRITE;
+            otherMemoryItem->State = 0;
+            otherMemoryItem->Type = 0;
+            otherMemoryItem->RegionType = KernelBigPoolRegion;
+            otherMemoryItem->AllocationBaseItem = otherMemoryItem;
+
+            PhAddElementAvlTree(&List->Set, &otherMemoryItem->Links);
+            InsertTailList(&List->ListHead, &otherMemoryItem->ListEntry);
+        }
+    }
+
+    PhFree(pBuffer);
+
+    return status;
+}
+
 NTSTATUS PhQueryMemoryItemList(
     _In_ HANDLE ProcessId,
     _In_ ULONG Flags,
@@ -748,7 +816,7 @@ NTSTATUS PhQueryMemoryItemList(
 
     allocationGranularity = PhSystemBasicInformation.AllocationGranularity;
 
-    while (NT_SUCCESS(NtQueryVirtualMemory(
+    while (NT_SUCCESS(PhQueryVirtualMemory(
         processHandle,
         baseAddress,
         MemoryBasicInformation,
@@ -837,6 +905,10 @@ ContinueLoop:
 
     if (Flags & PH_QUERY_MEMORY_WS_COUNTERS)
         PhpUpdateMemoryWsCounters(List, processHandle);
+
+    //Enum kernel big pools
+
+    PhpQueryKernelBigPoolMemoryItemList(Flags, List);
 
     NtClose(processHandle);
 

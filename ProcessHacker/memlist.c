@@ -498,6 +498,8 @@ PPH_STRING PhGetMemoryRegionUseText(
             type == CfgBitmap32Region ? L" 32-bit" : L"");
     case ApiSetMapRegion:
         return PhFormatString(L"ApiSetMap");
+    case KernelBigPoolRegion:
+        return PhFormatString(L"BigPool");
     default:
         return PhReferenceEmptyString();
     }
@@ -755,14 +757,14 @@ BOOLEAN NTAPI PhpMemoryTreeNewCallback(
                 }
                 else if (node->IsAllocationBase)
                 {
-                    PhInitializeStringRefLongHint(&getCellText->Text, PhGetMemoryTypeString(memoryItem->Type));
+                    PhInitializeStringRefLongHint(&getCellText->Text, PhGetMemoryTypeString(memoryItem));
                 }
                 else
                 {
                     PH_FORMAT format[3];
                     SIZE_T returnLength;
 
-                    PhInitFormatS(&format[0], PhGetMemoryTypeString(memoryItem->Type));
+                    PhInitFormatS(&format[0], PhGetMemoryTypeString(memoryItem));
                     PhInitFormatS(&format[1], L": ");
                     PhInitFormatS(&format[2], PhGetMemoryStateString(memoryItem->State));
 

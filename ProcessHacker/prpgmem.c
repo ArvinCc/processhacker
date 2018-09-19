@@ -283,7 +283,7 @@ BOOLEAN PhpMemoryTreeFilterCallback(
             return TRUE;
     }
     
-    tempString = PhGetMemoryTypeString(memoryItem->Type);
+    tempString = PhGetMemoryTypeString(memoryItem);
     if (tempString[0])
     {
         if (PhpWordMatchHandleStringZ(memoryContext->SearchboxText, tempString))
@@ -558,7 +558,7 @@ INT_PTR CALLBACK PhpProcessMemoryDlgProc(
 
                                     for (offset = 0; offset < memoryItem->RegionSize; offset += PAGE_SIZE)
                                     {
-                                        if (NT_SUCCESS(NtReadVirtualMemory(
+                                        if (NT_SUCCESS(PhReadVirtualMemory(
                                             processHandle,
                                             PTR_ADD_OFFSET(memoryItem->BaseAddress, offset),
                                             buffer,

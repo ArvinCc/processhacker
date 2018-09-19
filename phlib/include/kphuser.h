@@ -161,6 +161,18 @@ KphReadVirtualMemoryUnsafe(
 PHLIBAPI
 NTSTATUS
 NTAPI
+KphQueryVirtualMemory(
+    _In_ HANDLE ProcessHandle,
+    _In_opt_ PVOID BaseAddress,
+    _In_ MEMORY_INFORMATION_CLASS MemoryInformationClass,
+    _Out_writes_bytes_(MemoryInformationLength) PVOID MemoryInformation,
+    _In_ SIZE_T MemoryInformationLength,
+    _Out_opt_ PSIZE_T ReturnLength
+);
+
+PHLIBAPI
+NTSTATUS
+NTAPI
 KphQueryInformationProcess(
     _In_ HANDLE ProcessHandle,
     _In_ KPH_PROCESS_INFORMATION_CLASS ProcessInformationClass,

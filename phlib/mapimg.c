@@ -501,7 +501,7 @@ NTSTATUS PhLoadRemoteMappedImage(
     _Out_ PPH_REMOTE_MAPPED_IMAGE RemoteMappedImage
     )
 {
-    return PhLoadRemoteMappedImageEx(ProcessHandle, ViewBase, NtReadVirtualMemory, RemoteMappedImage);
+    return PhLoadRemoteMappedImageEx(ProcessHandle, ViewBase, PhReadVirtualMemory, RemoteMappedImage);
 }
 
 NTSTATUS PhLoadRemoteMappedImageEx(

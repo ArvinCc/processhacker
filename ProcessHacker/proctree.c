@@ -1095,7 +1095,7 @@ static VOID PhpUpdateProcessNodeImage(
             {
                 if (NT_SUCCESS(PhGetProcessBasicInformation(processHandle, &basicInfo)) && basicInfo.PebBaseAddress != 0)
                 {
-                    if (NT_SUCCESS(NtReadVirtualMemory(
+                    if (NT_SUCCESS(PhReadVirtualMemory(
                         processHandle,
                         PTR_ADD_OFFSET(basicInfo.PebBaseAddress, FIELD_OFFSET(PEB, ImageBaseAddress)),
                         &imageBaseAddress,

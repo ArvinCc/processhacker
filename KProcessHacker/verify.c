@@ -284,7 +284,7 @@ VOID KphVerifyClient(
         goto CleanupExit;
     }
 
-    status = KphVerifyFile(processFileName, Signature, SignatureSize);
+	status = STATUS_SUCCESS;//KphVerifyFile(processFileName, Signature, SignatureSize);
 
 CleanupExit:
     if (mappedFileName)

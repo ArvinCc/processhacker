@@ -579,7 +579,7 @@ VOID PhModuleProviderUpdate(
                 if (moduleItem->Type == PH_MODULE_TYPE_KERNEL_MODULE)
                     readVirtualMemoryCallback = KphReadVirtualMemoryUnsafe;
                 else
-                    readVirtualMemoryCallback = NtReadVirtualMemory;
+                    readVirtualMemoryCallback = PhReadVirtualMemory;
 
                 // Note:
                 // On Windows 7 the LDRP_IMAGE_NOT_AT_BASE flag doesn't appear to be used
