@@ -3,7 +3,7 @@
  *   plugin support
  *
  * Copyright (C) 2010-2015 wj32
- * Copyright (C) 2017-2018 dmex
+ * Copyright (C) 2017-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -183,16 +183,19 @@ VOID PhSetPluginDisabled(
 }
 
 static BOOLEAN EnumPluginsDirectoryCallback(
-    _In_ PFILE_DIRECTORY_INFORMATION Information,
+    _In_ PFILE_NAMES_INFORMATION Information,
     _In_opt_ PVOID Context
     )
 {
-    static PWSTR PhpPluginBlocklist[] =
+    static PH_STRINGREF PhpPluginExtension = PH_STRINGREF_INIT(L".dll");
+    static PH_STRINGREF PhpPluginBlocklist[] =
     {
-        L"CommonUtil.dll",
-        L"ExtraPlugins.dll"
+        PH_STRINGREF_INIT(L"CommonUtil.dll"),
+        PH_STRINGREF_INIT(L"ExtraPlugins.dll"),
+        PH_STRINGREF_INIT(L"SbieSupport.dll"),
+        PH_STRINGREF_INIT(L"HexPidPlugin.dll")
     };
-    BOOLEAN blacklistedPlugin = FALSE;
+    BOOLEAN blocklistedPlugin = FALSE;
     PH_STRINGREF baseName;
     PPH_STRING fileName;
 
@@ -200,21 +203,21 @@ static BOOLEAN EnumPluginsDirectoryCallback(
     baseName.Length = Information->FileNameLength;
 
     // Note: The *.dll pattern passed to NtQueryDirectoryFile includes extensions other than dll (For example: *.dll* or .dllmanifest). (dmex)
-    if (!PhEndsWithStringRef2(&baseName, L".dll", FALSE))
+    if (!PhEndsWithStringRef(&baseName, &PhpPluginExtension, FALSE))
         return TRUE;
 
     for (ULONG i = 0; i < RTL_NUMBER_OF(PhpPluginBlocklist); i++)
     {
-        if (PhEndsWithStringRef2(&baseName, PhpPluginBlocklist[i], TRUE))
+        if (PhEndsWithStringRef(&baseName, &PhpPluginBlocklist[i], TRUE))
         {
-            blacklistedPlugin = TRUE;
+            blocklistedPlugin = TRUE;
             break;
         }
     }
 
     fileName = PhConcatStringRef2(&PluginsDirectory->sr, &baseName);
 
-    if (blacklistedPlugin)
+    if (blocklistedPlugin)
     {
         PhDeleteFileWin32(fileName->Buffer);
     }
@@ -230,7 +233,7 @@ static BOOLEAN EnumPluginsDirectoryCallback(
             PPHP_PLUGIN_LOAD_ERROR loadError;
             PPH_STRING errorMessage;
 
-            loadError = PhAllocate(sizeof(PHP_PLUGIN_LOAD_ERROR));
+            loadError = PhAllocateZero(sizeof(PHP_PLUGIN_LOAD_ERROR));
             PhSetReference(&loadError->FileName, fileName);
 
             if (errorMessage = PhGetNtMessage(status))
@@ -289,16 +292,37 @@ VOID PhLoadPlugins(
     if (NT_SUCCESS(PhCreateFileWin32(
         &pluginsDirectoryHandle,
         PhGetString(PluginsDirectory),
-        FILE_GENERIC_READ,
-        FILE_ATTRIBUTE_NORMAL,
-        FILE_SHARE_READ,
+        FILE_LIST_DIRECTORY | SYNCHRONIZE,
+        FILE_ATTRIBUTE_DIRECTORY,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         FILE_OPEN,
         FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
         )))
     {
         UNICODE_STRING pattern = RTL_CONSTANT_STRING(L"*.dll");
 
-        PhEnumDirectoryFile(pluginsDirectoryHandle, &pattern, EnumPluginsDirectoryCallback, pluginLoadErrors);
+        if (!NT_SUCCESS(PhEnumDirectoryFileEx(
+            pluginsDirectoryHandle,
+            FileNamesInformation,
+            FALSE,
+            &pattern,
+            EnumPluginsDirectoryCallback,
+            pluginLoadErrors
+            )))
+        {
+            // Note: The MUP devices for Virtualbox and VMware improperly truncate
+            // data returned by NtQueryDirectoryFile when ReturnSingleEntry=FALSE and also have
+            // various other bugs and issues for information classes other than FileNamesInformation. (dmex)  
+            PhEnumDirectoryFileEx(
+                pluginsDirectoryHandle,
+                FileNamesInformation,
+                TRUE,
+                &pattern,
+                EnumPluginsDirectoryCallback,
+                pluginLoadErrors
+                );
+        }
+
         NtClose(pluginsDirectoryHandle);
     }
 
@@ -555,7 +579,6 @@ PPH_PLUGIN PhRegisterPlugin(
     plugin = PhAllocateZero(sizeof(PH_PLUGIN));
     plugin->Name = pluginName;
     plugin->DllBase = DllBase;
-
     plugin->FileName = fileName;
 
     existingLinks = PhAddElementAvlTree(&PhPluginsByName, &plugin->Links);
@@ -796,8 +819,7 @@ PPH_EMENU_ITEM PhPluginCreateEMenuItem(
     pluginMenuItem->Id = Id;
     pluginMenuItem->Context = Context;
 
-    item = PhCreateEMenuItem(Flags, ID_PLUGIN_MENU_ITEM, Text, NULL, NULL);
-    item->Context = pluginMenuItem;
+    item = PhCreateEMenuItem(Flags, ID_PLUGIN_MENU_ITEM, Text, NULL, pluginMenuItem);
     item->DeleteFunction = PhpPluginEMenuItemDeleteFunction;
 
     return item;
@@ -1033,4 +1055,11 @@ NTSTATUS PhPluginCallPhSvc(
     PhDereferenceObject(apiId);
 
     return status;
+}
+
+PPH_STRING PhGetPluginName(
+    _In_ PPH_PLUGIN Plugin
+    )
+{
+    return PhCreateString2(&Plugin->Name);
 }

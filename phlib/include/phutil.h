@@ -172,22 +172,6 @@ PhLargeIntegerToLocalSystemTime(
     FileTimeToSystemTime(&newFileTime, SystemTime);
 }
 
-PHLIBAPI
-VOID
-NTAPI
-PhReferenceObjects(
-    _In_reads_(NumberOfObjects) PVOID *Objects,
-    _In_ ULONG NumberOfObjects
-    );
-
-PHLIBAPI
-VOID
-NTAPI
-PhDereferenceObjects(
-    _In_reads_(NumberOfObjects) PVOID *Objects,
-    _In_ ULONG NumberOfObjects
-    );
-
 // NLS
 
 LCID PhGetSystemDefaultLCID(
@@ -564,6 +548,22 @@ PhFormatImageVersionInfo(
     _In_ PPH_IMAGE_VERSION_INFO ImageVersionInfo,
     _In_opt_ PPH_STRINGREF Indent,
     _In_opt_ ULONG LineLimit
+    );
+
+PHLIBAPI
+BOOLEAN
+NTAPI
+PhInitializeImageVersionInfoCached(
+    _Out_ PPH_IMAGE_VERSION_INFO ImageVersionInfo,
+    _In_ PPH_STRING FileName,
+    _In_ BOOLEAN IsSubsystemProcess
+    );
+
+PHLIBAPI
+VOID
+NTAPI
+PhFlushImageVersionInfoCache(
+    VOID
     );
 
 PHLIBAPI
@@ -1105,12 +1105,11 @@ PhParseCommandLineFuzzy(
     );
 
 PHLIBAPI
-BOOLEAN
+PPH_STRING
 NTAPI
 PhSearchFilePath(
     _In_ PWSTR FileName,
-    _In_opt_ PWSTR Extension,
-    _Out_ PPH_STRING *FilePath
+    _In_opt_ PWSTR Extension
     );
 
 PHLIBAPI
@@ -1262,6 +1261,20 @@ NTAPI
 PhGetExportNameFromOrdinal(
     _In_ PVOID DllBase,
     _In_opt_ USHORT ProcedureNumber
+    );
+
+PHLIBAPI
+PPH_STRING
+NTAPI
+PhGetFileText(
+    _In_ HANDLE FileHandle
+    );
+
+PHLIBAPI
+PPH_STRING
+NTAPI
+PhFileReadAllText(
+    _In_ PWSTR FileName
     );
 
 #ifdef __cplusplus

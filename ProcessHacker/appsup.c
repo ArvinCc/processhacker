@@ -3,7 +3,7 @@
  *   application support functions
  *
  * Copyright (C) 2010-2016 wj32
- * Copyright (C) 2017 dmex
+ * Copyright (C) 2017-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -76,18 +76,21 @@ BOOLEAN PhIsProcessSuspended(
     _In_ HANDLE ProcessId
     )
 {
+    BOOLEAN suspended = FALSE;
     PVOID processes;
     PSYSTEM_PROCESS_INFORMATION process;
 
     if (NT_SUCCESS(PhEnumProcesses(&processes)))
     {
         if (process = PhFindProcessInformation(processes, ProcessId))
-            return PhGetProcessIsSuspended(process);
+        {
+            suspended = PhGetProcessIsSuspended(process);
+        }
 
         PhFree(processes);
     }
 
-    return FALSE;
+    return suspended;
 }
 
 /**
@@ -177,7 +180,18 @@ NTSTATUS PhGetProcessSwitchContext(
     if (!data)
         return STATUS_UNSUCCESSFUL; // no compatibility context data
 
-    if (WindowsVersion >= WINDOWS_10_RS2)
+    if (WindowsVersion >= WINDOWS_10_RS5)
+    {
+        if (!NT_SUCCESS(status = NtReadVirtualMemory(
+            ProcessHandle,
+            PTR_ADD_OFFSET(data, 2040 + 24), // Magic value from SbReadProcContextByHandle
+            Guid,
+            sizeof(GUID),
+            NULL
+            )))
+            return status;
+    }
+    else if (WindowsVersion >= WINDOWS_10_RS2)
     {
         if (!NT_SUCCESS(status = PhReadVirtualMemory(
             ProcessHandle,
@@ -368,11 +382,14 @@ PH_KNOWN_PROCESS_TYPE PhGetProcessKnownTypeEx(
                 knownProcessType = UmdfHostProcessType;
             else if (PhEqualStringRef2(&name, L"\\wbem\\WmiPrvSE.exe", TRUE))
                 knownProcessType = WmiProviderHostType;
+            else if (PhEqualStringRef2(&name, L"\\MicrosoftEdgeCP.exe", TRUE)) // RS5
+                knownProcessType = EdgeProcessType;
+            else if (PhEqualStringRef2(&name, L"\\MicrosoftEdgeSH.exe", TRUE)) // RS5
+                knownProcessType = EdgeProcessType;
         }
         else
         {
-            // Microsoft Edge
-            if (PhEndsWithStringRef2(&name, L"\\MicrosoftEdgeCP.exe", TRUE))
+            if (PhEndsWithStringRef2(&name, L"\\MicrosoftEdgeCP.exe", TRUE)) // RS4
                 knownProcessType = EdgeProcessType;
             else if (PhEndsWithStringRef2(&name, L"\\MicrosoftEdge.exe", TRUE))
                 knownProcessType = EdgeProcessType;
@@ -1083,7 +1100,6 @@ VOID PhWritePhTextHeader(
     PPH_STRING version;
     LARGE_INTEGER time;
     SYSTEMTIME systemTime;
-    PPH_STRING dateString;
     PPH_STRING timeString;
 
     PhWriteStringAsUtf8FileStream2(FileStream, L"Process Hacker ");
@@ -1094,9 +1110,9 @@ VOID PhWritePhTextHeader(
         PhDereferenceObject(version);
     }
 
-    PhWriteStringFormatAsUtf8FileStream(FileStream, L"\r\nWindows NT %u.%u", PhOsVersion.dwMajorVersion, PhOsVersion.dwMinorVersion);
+    PhWriteStringFormatAsUtf8FileStream(FileStream, L"\r\nWindows NT %lu.%lu", PhOsVersion.dwMajorVersion, PhOsVersion.dwMinorVersion);
 
-    if (PhOsVersion.szCSDVersion[0] != 0)
+    if (PhOsVersion.szCSDVersion[0] != UNICODE_NULL)
         PhWriteStringFormatAsUtf8FileStream(FileStream, L" %s", PhOsVersion.szCSDVersion);
 
 #ifdef _WIN64
@@ -1108,10 +1124,8 @@ VOID PhWritePhTextHeader(
     PhQuerySystemTime(&time);
     PhLargeIntegerToLocalSystemTime(&systemTime, &time);
 
-    dateString = PhFormatDate(&systemTime, NULL);
-    timeString = PhFormatTime(&systemTime, NULL);
-    PhWriteStringFormatAsUtf8FileStream(FileStream, L"\r\n%s %s\r\n\r\n", dateString->Buffer, timeString->Buffer);
-    PhDereferenceObject(dateString);
+    timeString = PhFormatDateTime(&systemTime);
+    PhWriteStringFormatAsUtf8FileStream(FileStream, L"\r\n%s\r\n\r\n", timeString->Buffer);
     PhDereferenceObject(timeString);
 }
 
@@ -1209,7 +1223,7 @@ BOOLEAN PhShellProcessHackerEx(
             PhAppendStringBuilder2(&sb, L" -newinstance");
 
         if (PhStartupParameters.SelectPid != 0)
-            PhAppendFormatStringBuilder(&sb, L" -selectpid %u", PhStartupParameters.SelectPid);
+            PhAppendFormatStringBuilder(&sb, L" -selectpid %lu", PhStartupParameters.SelectPid);
 
         if (PhStartupParameters.PriorityClass != 0)
         {
@@ -1300,15 +1314,9 @@ BOOLEAN PhCreateProcessIgnoreIfeoDebugger(
     )
 {
     BOOLEAN result;
-    BOOL (NTAPI *debugSetProcessKillOnExit)(BOOL);
-    BOOL (NTAPI *debugActiveProcessStop)(ULONG);
     BOOLEAN originalValue;
     STARTUPINFO startupInfo;
     PROCESS_INFORMATION processInfo;
-
-    if (!(debugSetProcessKillOnExit = PhGetDllProcedureAddress(L"kernel32.dll", "DebugSetProcessKillOnExit", 0)) ||
-        !(debugActiveProcessStop = PhGetDllProcedureAddress(L"kernel32.dll", "DebugActiveProcessStop", 0)))
-        return FALSE;
 
     result = FALSE;
 
@@ -1325,9 +1333,31 @@ BOOLEAN PhCreateProcessIgnoreIfeoDebugger(
     // allows us to skip the Debugger IFEO value.
     if (CreateProcess(FileName, NULL, NULL, NULL, FALSE, DEBUG_PROCESS | DEBUG_ONLY_THIS_PROCESS, NULL, NULL, &startupInfo, &processInfo))
     {
-        // Stop debugging the process now.
-        debugSetProcessKillOnExit(FALSE);
-        debugActiveProcessStop(processInfo.dwProcessId);
+        HANDLE debugObjectHandle;
+
+        if (NT_SUCCESS(PhGetProcessDebugObject(
+            processInfo.hProcess,
+            &debugObjectHandle
+            )))
+        {
+            ULONG killProcessOnExit;
+
+            // Disable kill-on-close.
+            killProcessOnExit = 0;
+            NtSetInformationDebugObject(
+                debugObjectHandle,
+                DebugObjectKillProcessOnExitInformation,
+                &killProcessOnExit,
+                sizeof(ULONG),
+                NULL
+                );
+
+            // Stop debugging the process now.
+            NtRemoveProcessDebug(processInfo.hProcess, debugObjectHandle);
+
+            NtClose(debugObjectHandle);
+        }
+
         result = TRUE;
     }
 
@@ -1782,6 +1812,127 @@ BOOLEAN PhHandleCopyCellEMenuItem(
     return TRUE;
 }
 
+VOID NTAPI PhpCopyListViewEMenuItemDeleteFunction(
+    _In_ struct _PH_EMENU_ITEM *Item
+    )
+{
+    PPH_COPY_ITEM_CONTEXT context;
+
+    context = Item->Context;
+    PhDereferenceObject(context->MenuItemText);
+    PhFree(context);
+}
+
+BOOLEAN PhInsertCopyListViewEMenuItem(
+    _In_ struct _PH_EMENU_ITEM *Menu,
+    _In_ ULONG InsertAfterId,
+    _In_ HWND ListViewHandle
+    )
+{
+    PPH_EMENU_ITEM parentItem;
+    ULONG indexInParent;
+    PPH_COPY_ITEM_CONTEXT context;
+    PPH_STRING columnText = NULL;
+    PPH_STRING escapedText;
+    PPH_STRING menuItemText;
+    PPH_EMENU_ITEM copyMenuItem;
+    POINT location;
+    LVHITTESTINFO lvHitInfo;
+    HDITEM headerItem;
+    WCHAR headerText[MAX_PATH];
+
+    if (!GetCursorPos(&location))
+        return FALSE;
+    if (!ScreenToClient(ListViewHandle, &location))
+        return FALSE;
+
+    memset(&lvHitInfo, 0, sizeof(LVHITTESTINFO));
+    lvHitInfo.pt = location;
+
+    if (ListView_SubItemHitTest(ListViewHandle, &lvHitInfo) == -1)
+        return FALSE;
+
+    memset(headerText, 0, sizeof(headerText));
+    memset(&headerItem, 0, sizeof(HDITEM));
+    headerItem.mask = HDI_TEXT;
+    headerItem.cchTextMax = RTL_NUMBER_OF(headerText);
+    headerItem.pszText = headerText;
+
+    if (!Header_GetItem(ListView_GetHeader(ListViewHandle), lvHitInfo.iSubItem, &headerItem))
+        return FALSE;
+
+    columnText = PhaCreateString(headerText);
+
+    if (PhIsNullOrEmptyString(columnText))
+        return FALSE;
+
+    if (!PhFindEMenuItemEx(Menu, 0, NULL, InsertAfterId, &parentItem, &indexInParent))
+        return FALSE;
+
+    indexInParent++;
+
+    context = PhAllocate(sizeof(PH_COPY_ITEM_CONTEXT));
+    context->ListViewHandle = ListViewHandle;
+    context->Id = lvHitInfo.iItem;
+    context->SubId = lvHitInfo.iSubItem;
+
+    escapedText = PhEscapeStringForMenuPrefix(&columnText->sr);
+    menuItemText = PhFormatString(L"Copy \"%s\"", escapedText->Buffer);
+    PhDereferenceObject(escapedText);
+
+    copyMenuItem = PhCreateEMenuItem(0, ID_COPY_CELL, menuItemText->Buffer, NULL, context);
+    copyMenuItem->DeleteFunction = PhpCopyListViewEMenuItemDeleteFunction;
+    context->MenuItemText = menuItemText;
+
+    PhInsertEMenuItem(parentItem, copyMenuItem, indexInParent);
+
+    return TRUE;
+}
+
+BOOLEAN PhHandleCopyListViewEMenuItem(
+    _In_ struct _PH_EMENU_ITEM *SelectedItem
+    )
+{
+    PPH_COPY_ITEM_CONTEXT context;
+    PH_STRING_BUILDER stringBuilder;
+    ULONG count;
+    ULONG selectedCount;
+    ULONG i;
+    PPH_STRING getItemText;
+
+    if (!SelectedItem)
+        return FALSE;
+    if (SelectedItem->Id != ID_COPY_CELL)
+        return FALSE;
+
+    context = SelectedItem->Context;
+
+    PhInitializeStringBuilder(&stringBuilder, 0x100);
+    count = ListView_GetItemCount(context->ListViewHandle);
+    selectedCount = 0;
+
+    for (i = 0; i < count; i++)
+    {
+        if (!(ListView_GetItemState(context->ListViewHandle, i, LVIS_SELECTED) & LVIS_SELECTED))
+            continue;
+
+        getItemText = PhaGetListViewItemText(context->ListViewHandle, i, context->SubId);
+
+        PhAppendStringBuilder(&stringBuilder, &getItemText->sr);
+        PhAppendStringBuilder2(&stringBuilder, L"\r\n");
+
+        selectedCount++;
+    }
+
+    if (stringBuilder.String->Length != 0 && selectedCount == 1)
+        PhRemoveEndStringBuilder(&stringBuilder, 2);
+
+    PhSetClipboardString(context->ListViewHandle, &stringBuilder.String->sr);
+    PhDeleteStringBuilder(&stringBuilder);
+
+    return TRUE;
+}
+
 BOOLEAN PhpSelectFavoriteInRegedit(
     _In_ HWND RegeditWindow,
     _In_ PPH_STRINGREF FavoriteName,
@@ -1991,3 +2142,4 @@ HBITMAP PhGetShieldBitmap(
 
     return shieldBitmap;
 }
+

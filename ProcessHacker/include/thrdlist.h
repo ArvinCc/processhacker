@@ -27,6 +27,8 @@ typedef enum _PH_THREAD_TREELIST_COLUMN
     PH_THREAD_TREELIST_COLUMN_KERNELTIME,
     PH_THREAD_TREELIST_COLUMN_USERTIME,
     PH_THREAD_TREELIST_COLUMN_IDEALPROCESSOR,
+    PH_THREAD_TREELIST_COLUMN_CRITICAL,
+    PH_THREAD_TREELIST_COLUMN_TIDHEX,
     PH_THREAD_TREELIST_COLUMN_MAXIMUM
 } PH_THREAD_TREELIST_COLUMN;
 
@@ -47,6 +49,7 @@ typedef struct _PH_THREAD_NODE
 
     ULONG PagePriority;
     IO_PRIORITY_HINT IoPriority;
+    BOOLEAN BreakOnTermination;
     WCHAR ThreadIdText[PH_INT32_STR_LEN_1];
     WCHAR CpuUsageText[PH_INT32_STR_LEN_1];
     PPH_STRING CyclesDeltaText; // used for Context Switches Delta as well
@@ -54,6 +57,7 @@ typedef struct _PH_THREAD_NODE
     PPH_STRING PrioritySymbolicText;
     PPH_STRING CreatedText;
     PPH_STRING NameText;
+    PPH_STRING StateText;
     WCHAR ContextSwitchesText[PH_INT64_STR_LEN_1];
     WCHAR PriorityText[PH_INT32_STR_LEN_1];
     WCHAR BasePriorityText[PH_INT32_STR_LEN_1];
@@ -61,6 +65,7 @@ typedef struct _PH_THREAD_NODE
     WCHAR KernelTimeText[PH_TIMESPAN_STR_LEN_1];
     WCHAR UserTimeText[PH_TIMESPAN_STR_LEN_1];
     WCHAR IdealProcessorText[PH_INT32_STR_LEN + 1 + PH_INT32_STR_LEN + 1];
+    WCHAR ThreadIdHexText[PH_INT32_STR_LEN_1];
 // begin_phapppub
 } PH_THREAD_NODE, *PPH_THREAD_NODE;
 // end_phapppub

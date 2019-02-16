@@ -59,6 +59,10 @@ NTSTATUS TracertHostnameLookupCallback(
     )
 {
     PTRACERT_RESOLVE_WORKITEM resolve = Parameter;
+    WSADATA winsockStartup;
+
+    if (WSAStartup(WINSOCK_VERSION, &winsockStartup) != ERROR_SUCCESS)
+        return STATUS_INVALID_PARAMETER;
 
     if (resolve->Type == PH_IPV4_NETWORK_TYPE)
     {
@@ -130,6 +134,8 @@ NTSTATUS TracertHostnameLookupCallback(
             PhDereferenceObject(resolve);
         }
     }
+
+    WSACleanup();
 
     return STATUS_SUCCESS;
 }
@@ -257,6 +263,7 @@ NTSTATUS NetworkTracertThreadStart(
     HANDLE icmpHandle = INVALID_HANDLE_VALUE;
     SOCKADDR_STORAGE sourceAddress = { 0 };
     SOCKADDR_STORAGE destinationAddress = { 0 };
+    ULONG icmpReplyCount = 0;
     ULONG icmpReplyLength = 0;
     PVOID icmpReplyBuffer = NULL;
     PPH_BYTES icmpEchoBuffer = NULL;
@@ -268,11 +275,6 @@ NTSTATUS NetworkTracertThreadStart(
         IP_FLAG_DF,
         0
     };
-    WSADATA winsockStartup;
-
-    // WSAStartup required by GetNameInfo.
-    if (WSAStartup(WINSOCK_VERSION, &winsockStartup) != ERROR_SUCCESS)
-        goto CleanupExit;
 
     if (icmpRandString = PhCreateStringEx(NULL, PhGetIntegerSetting(SETTING_NAME_PING_SIZE) * 2 + 2))
     {
@@ -331,7 +333,7 @@ NTSTATUS NetworkTracertThreadStart(
                 icmpReplyBuffer = PhAllocate(icmpReplyLength);
                 memset(icmpReplyBuffer, 0, icmpReplyLength);
 
-                if (IcmpSendEcho2Ex(
+                icmpReplyCount = IcmpSendEcho2Ex(
                     icmpHandle,
                     0,
                     NULL,
@@ -344,7 +346,9 @@ NTSTATUS NetworkTracertThreadStart(
                     icmpReplyBuffer,
                     icmpReplyLength,
                     DEFAULT_TIMEOUT
-                    ))
+                    );
+
+                if (icmpReplyCount > 0)
                 {
                     PICMP_ECHO_REPLY reply4 = (PICMP_ECHO_REPLY)icmpReplyBuffer;
 
@@ -377,7 +381,7 @@ NTSTATUS NetworkTracertThreadStart(
                 }
                 else
                 {
-                    node->PingStatus[ii] = IP_REQ_TIMED_OUT;
+                    node->PingStatus[ii] = GetLastError(); // IP_REQ_TIMED_OUT;
                     UpdateTracertNode(context, node);
                 }
 
@@ -389,7 +393,7 @@ NTSTATUS NetworkTracertThreadStart(
                 icmpReplyBuffer = PhAllocate(icmpReplyLength);
                 memset(icmpReplyBuffer, 0, icmpReplyLength);
 
-                if (Icmp6SendEcho2(
+                icmpReplyCount = Icmp6SendEcho2(
                     icmpHandle,
                     0,
                     NULL,
@@ -402,7 +406,9 @@ NTSTATUS NetworkTracertThreadStart(
                     icmpReplyBuffer,
                     icmpReplyLength,
                     DEFAULT_TIMEOUT
-                    ))
+                    );
+
+                if (icmpReplyCount > 0)
                 {
                     PICMPV6_ECHO_REPLY reply6 = (PICMPV6_ECHO_REPLY)icmpReplyBuffer;
 
@@ -428,7 +434,7 @@ NTSTATUS NetworkTracertThreadStart(
                 }
                 else
                 {
-                    node->PingStatus[ii] = IP_REQ_TIMED_OUT;
+                    node->PingStatus[ii] = GetLastError(); // IP_REQ_TIMED_OUT;
                     UpdateTracertNode(context, node);
                 }
 
@@ -463,7 +469,6 @@ CleanupExit:
     if (icmpEchoBuffer)
         PhDereferenceObject(icmpEchoBuffer);
 
-    WSACleanup();
     return STATUS_SUCCESS;
 }
 

@@ -77,9 +77,11 @@ NTSTATUS KphInitializeDynamicPackage(
 
         if (servicePack == 0)
         {
+            NOTHING;
         }
         else if (servicePack == 1)
         {
+            NOTHING;
         }
         else
         {
@@ -153,10 +155,12 @@ NTSTATUS KphInitializeDynamicPackage(
             Package->BuildNumber = 17134;
             Package->ResultingNtVersion = PHNT_REDSTONE4;
             break;
-        default:
-            Package->BuildNumber = USHRT_MAX;
-            Package->ResultingNtVersion = PHNT_THRESHOLD;
+        case 17763:
+            Package->BuildNumber = 17763;
+            Package->ResultingNtVersion = PHNT_REDSTONE5;
             break;
+        default:
+            return STATUS_NOT_SUPPORTED;
         }
 
         Package->StructData.EgeGuid = 0x18;
@@ -285,10 +289,16 @@ NTSTATUS KphInitializeDynamicPackage(
             Package->BuildNumber = 16299;
             Package->ResultingNtVersion = PHNT_REDSTONE3;
             break;
-        default:
-            Package->BuildNumber = USHRT_MAX;
-            Package->ResultingNtVersion = PHNT_THRESHOLD;
+        case 17134:
+            Package->BuildNumber = 17134;
+            Package->ResultingNtVersion = PHNT_REDSTONE4;
             break;
+        case 17763:
+            Package->BuildNumber = 17763;
+            Package->ResultingNtVersion = PHNT_REDSTONE5;
+            break;
+        default:
+            return STATUS_NOT_SUPPORTED;
         }
 
         Package->StructData.EgeGuid = 0xc;

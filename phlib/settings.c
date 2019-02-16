@@ -3,7 +3,7 @@
  *   settings
  *
  * Copyright (C) 2010-2016 wj32
- * Copyright (C) 2017 dmex
+ * Copyright (C) 2017-2018 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -38,6 +38,7 @@
 #include <ph.h>
 #include <phbasesup.h>
 #include <phutil.h>
+#include <guisup.h>
 #include <settings.h>
 
 #include <commctrl.h>
@@ -1149,7 +1150,7 @@ BOOLEAN PhLoadListViewColumnSettings(
     ULONG maxOrder;
     ULONG scale;
 
-    if (Settings->Length == 0)
+    if (PhIsNullOrEmptyString(Settings))
         return FALSE;
 
     remainingPart = Settings->sr;
@@ -1242,7 +1243,7 @@ PPH_STRING PhSaveListViewColumnSettings(
 
     PhInitializeStringBuilder(&stringBuilder, 20);
 
-    PhAppendFormatStringBuilder(&stringBuilder, L"@%u|", PhGlobalDpi);
+    PhAppendFormatStringBuilder(&stringBuilder, L"@%lu|", PhGlobalDpi);
 
     lvColumn.mask = LVCF_WIDTH | LVCF_ORDER;
 
@@ -1285,4 +1286,167 @@ VOID PhSaveListViewColumnsToSetting(
     string = PhSaveListViewColumnSettings(ListViewHandle);
     PhSetStringSetting2(Name, &string->sr);
     PhDereferenceObject(string);
+}
+
+VOID PhLoadListViewSortColumnsFromSetting(
+    _In_ PWSTR Name,
+    _In_ HWND ListViewHandle
+    )
+{
+    PPH_STRING string;
+    ULONG sortColumn = 0;
+    PH_SORT_ORDER sortOrder = AscendingSortOrder;
+    PH_STRINGREF remainingPart;
+
+    string = PhGetStringSetting(Name);
+
+    if (PhIsNullOrEmptyString(string))
+        return;
+
+    remainingPart = string->sr;
+
+    if (remainingPart.Length != 0)
+    {
+        PH_STRINGREF columnPart;
+        PH_STRINGREF orderPart;
+        ULONG64 integer;
+
+        if (!PhSplitStringRefAtChar(&remainingPart, ',', &columnPart, &orderPart))
+            return;
+
+        if (!PhStringToInteger64(&columnPart, 10, &integer))
+            return;
+
+        sortColumn = (ULONG)integer;
+
+        if (!PhStringToInteger64(&orderPart, 10, &integer))
+            return;
+
+        sortOrder = (ULONG)integer;
+    }
+
+    ExtendedListView_SetSort(ListViewHandle, sortColumn, sortOrder);
+
+    PhDereferenceObject(string);
+}
+
+VOID PhSaveListViewSortColumnsToSetting(
+    _In_ PWSTR Name,
+    _In_ HWND ListViewHandle
+    )
+{
+    PPH_STRING string;
+    ULONG sortColumn = 0;
+    PH_SORT_ORDER sortOrder = AscendingSortOrder;
+
+    if (ExtendedListView_GetSort(ListViewHandle, &sortColumn, &sortOrder))
+        string = PhFormatString(L"%lu,%lu", sortColumn, sortOrder);
+    else
+        string = PhCreateString(L"0,0");
+
+    PhSetStringSetting2(Name, &string->sr);
+    PhDereferenceObject(string);
+}
+
+VOID PhLoadListViewGroupStatesFromSetting(
+    _In_ PWSTR Name,
+    _In_ HWND ListViewHandle
+    )
+{
+    ULONG64 countInteger;
+    PPH_STRING settingsString;
+    PH_STRINGREF remaining;
+    PH_STRINGREF part;
+
+    settingsString = PhaGetStringSetting(Name);
+    remaining = settingsString->sr;
+
+    if (remaining.Length == 0)
+        return;
+
+    if (!PhSplitStringRefAtChar(&remaining, '|', &part, &remaining))
+        return;
+
+    if (!PhStringToInteger64(&part, 10, &countInteger))
+        return;
+
+    for (INT index = 0; index < (INT)countInteger; index++)
+    {
+        ULONG64 groupId;
+        ULONG64 stateMask;
+        PH_STRINGREF groupIdPart;
+        PH_STRINGREF stateMaskPart;
+
+        if (remaining.Length == 0)
+            break;
+
+        PhSplitStringRefAtChar(&remaining, '|', &groupIdPart, &remaining);
+
+        if (groupIdPart.Length == 0)
+            break;
+
+        PhSplitStringRefAtChar(&remaining, '|', &stateMaskPart, &remaining);
+
+        if (stateMaskPart.Length == 0)
+            break;
+
+        if (!PhStringToInteger64(&groupIdPart, 10, &groupId))
+            break;
+        if (!PhStringToInteger64(&stateMaskPart, 10, &stateMask))
+            break;
+
+        ListView_SetGroupState(
+            ListViewHandle,
+            (INT)groupId,
+            LVGS_NORMAL | LVGS_COLLAPSED,
+            (UINT)stateMask
+            );
+    }
+}
+
+VOID PhSaveListViewGroupStatesToSetting(
+    _In_ PWSTR Name,
+    _In_ HWND ListViewHandle
+    )
+{
+    INT index;
+    INT count;
+    PPH_STRING settingsString;
+    PH_STRING_BUILDER stringBuilder;
+
+    PhInitializeStringBuilder(&stringBuilder, 100);
+
+    count = (INT)ListView_GetGroupCount(ListViewHandle);
+
+    PhAppendFormatStringBuilder(
+        &stringBuilder,
+        L"%d|",
+        count
+        );
+
+    for (index = 0; index < count; index++)
+    {
+        LVGROUP group;
+
+        memset(&group, 0, sizeof(LVGROUP));
+        group.cbSize = sizeof(LVGROUP);
+        group.mask = LVGF_GROUPID | LVGF_STATE;
+        group.stateMask = LVGS_NORMAL | LVGS_COLLAPSED;
+
+        if (ListView_GetGroupInfoByIndex(ListViewHandle, index, &group) == -1)
+            continue;
+
+        PhAppendFormatStringBuilder(
+            &stringBuilder,
+            L"%d|%u|",
+            group.iGroupId,
+            group.state
+            );
+    }
+
+    if (stringBuilder.String->Length != 0)
+        PhRemoveEndStringBuilder(&stringBuilder, 1);
+
+    settingsString = PH_AUTO(PhFinalStringBuilderString(&stringBuilder));
+    PhSetStringSetting2(Name, &settingsString->sr);
 }

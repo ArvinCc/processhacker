@@ -156,6 +156,49 @@ BOOLEAN PhAppResolverGetAppIdForProcess(
     return FALSE;
 }
 
+BOOLEAN PhAppResolverGetAppIdForWindow(
+    _In_ HWND WindowHandle,
+    _Out_ PPH_STRING *ApplicationUserModelId
+    )
+{
+    PVOID resolverInterface;
+    PWSTR appIdText = NULL;
+
+    if (!(resolverInterface = PhpQueryAppResolverInterface()))
+        return FALSE;
+
+    if (WindowsVersion < WINDOWS_8)
+    {
+        IApplicationResolver_GetAppIDForWindow(
+            (IApplicationResolver61*)resolverInterface,
+            WindowHandle,
+            &appIdText,
+            NULL,
+            NULL,
+            NULL
+            );
+    }
+    else
+    {
+        IApplicationResolver_GetAppIDForWindow(
+            (IApplicationResolver62*)resolverInterface,
+            WindowHandle,
+            &appIdText,
+            NULL,
+            NULL,
+            NULL
+            );
+    }
+
+    if (appIdText)
+    {
+        *ApplicationUserModelId = PhCreateString(appIdText);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 HRESULT PhAppResolverActivateAppId(
     _In_ PPH_STRING AppUserModelId,
     _In_opt_ PWSTR CommandLine,
@@ -336,9 +379,9 @@ PPH_STRING PhGetProcessPackageFullName(
             {
                 PTOKEN_SECURITY_ATTRIBUTE_V1 attribute = &info->Attribute.pAttributeV1[i];
 
-                if (RtlEqualUnicodeString(&attribute->Name, &attributeNameUs, FALSE))
+                if (attribute->ValueType == TOKEN_SECURITY_ATTRIBUTE_TYPE_STRING)
                 {
-                    if (attribute->ValueType == TOKEN_SECURITY_ATTRIBUTE_TYPE_STRING)
+                    if (RtlEqualUnicodeString(&attribute->Name, &attributeNameUs, FALSE))
                     {
                         packageName = PhCreateStringFromUnicodeString(&attribute->Values.pString[0]);
                         break;
@@ -353,6 +396,28 @@ PPH_STRING PhGetProcessPackageFullName(
     }
 
     return packageName;
+}
+
+BOOLEAN PhIsPackageCapabilitySid(
+    _In_ PSID AppContainerSid,
+    _In_ PSID Sid
+    )
+{
+    BOOLEAN isPackageCapability = TRUE;
+
+    for (ULONG i = 1; i < SECURITY_APP_PACKAGE_RID_COUNT - 1; i++)
+    {
+        if (
+            *RtlSubAuthoritySid(AppContainerSid, i) !=
+            *RtlSubAuthoritySid(Sid, i)
+            )
+        {
+            isPackageCapability = FALSE;
+            break;
+        }
+    }
+
+    return isPackageCapability;
 }
 
 BOOLEAN PhGetAppWindowingModel(

@@ -67,10 +67,10 @@ namespace CustomBuildTool
                 process.StartInfo.Arguments = args;
                 process.Start();
 
-                process.WaitForExit();
-
                 output = process.StandardOutput.ReadToEnd();
                 output = output.Replace("\n\n", "\r\n").Trim();
+
+                process.WaitForExit();
             }
 
             return output;
@@ -78,18 +78,40 @@ namespace CustomBuildTool
 
         public static string SearchFile(string FileName)
         {
-            string where = Environment.ExpandEnvironmentVariables("%SystemRoot%\\System32\\where.exe");
-
-            if (File.Exists(where))
+            try
             {
-                string whereResult = ShellExecute(where, FileName);
+                if (File.Exists(FileName))
+                    return Path.GetFullPath(FileName);
 
-                if (!string.IsNullOrEmpty(whereResult))
-                    return whereResult;
+                string values = Environment.GetEnvironmentVariable("PATH");
+
+                foreach (string path in values.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string whereResult = Path.Combine(path, FileName);
+
+                    if (File.Exists(whereResult))
+                        return whereResult;
+                }
             }
+            catch (Exception) { }
 
             return null;
         }
+
+        //public static string SearchFile(string FileName)
+        //{
+        //    string where = Environment.ExpandEnvironmentVariables("%SystemRoot%\\System32\\where.exe");
+        //
+        //    if (File.Exists(where))
+        //    {
+        //        string whereResult = ShellExecute(where, FileName);
+        //
+        //        if (!string.IsNullOrEmpty(whereResult))
+        //            return whereResult;
+        //    }
+        //
+        //    return null;
+        //}
 
         public static void ImageResizeFile(int size, string FileName, string OutName)
         {
@@ -240,6 +262,11 @@ namespace CustomBuildTool
     {
         public static string GetMsbuildFilePath()
         {
+            string[] MsBuildPathArray =
+            {
+                "\\MSBuild\\Current\\Bin\\MSBuild.exe",
+                "\\MSBuild\\15.0\\Bin\\MSBuild.exe"
+            };
             string vswhere = string.Empty;
 
             if (Environment.Is64BitOperatingSystem)
@@ -252,6 +279,7 @@ namespace CustomBuildTool
             {
                 string vswhereResult = Win32.ShellExecute(vswhere,
                     "-latest " +
+                    "-prerelease " +
                     "-products * " +
                     "-requires Microsoft.Component.MSBuild " +
                     "-property installationPath "
@@ -260,8 +288,11 @@ namespace CustomBuildTool
                 if (string.IsNullOrEmpty(vswhereResult))
                     return null;
 
-                if (File.Exists(vswhereResult + "\\MSBuild\\15.0\\Bin\\MSBuild.exe"))
-                    return vswhereResult + "\\MSBuild\\15.0\\Bin\\MSBuild.exe";
+                foreach (string path in MsBuildPathArray)
+                {
+                    if (File.Exists(vswhereResult + path))
+                        return vswhereResult + path;
+                }
 
                 return null;
             }
@@ -273,8 +304,11 @@ namespace CustomBuildTool
 
                     if (instance != null)
                     {
-                        if (File.Exists(instance.Path + "\\MSBuild\\15.0\\Bin\\MSBuild.exe"))
-                            return instance.Path + "\\MSBuild\\15.0\\Bin\\MSBuild.exe";
+                        foreach (string path in MsBuildPathArray)
+                        {
+                            if (File.Exists(instance.Path + path))
+                                return instance.Path + path;
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -329,11 +363,7 @@ namespace CustomBuildTool
 
         static AppVeyor()
         {
-            try
-            {
-                AppVeyorPath = Win32.SearchFile("appveyor");
-            }
-            catch (Exception) { }
+            AppVeyorPath = Win32.SearchFile("appveyor.exe");
         }
 
         public static bool AppVeyorNightlyBuild()

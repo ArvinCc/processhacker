@@ -60,7 +60,7 @@ VOID PhAddDefaultSettings(
     PhpAddIntegerSetting(L"EnvironmentTreeListFlags", L"0");
     PhpAddIntegerSetting(L"FindObjRegex", L"0");
     PhpAddStringSetting(L"FindObjTreeListColumns", L"");
-    PhpAddIntegerPairSetting(L"FindObjWindowPosition", L"350,350");
+    PhpAddIntegerPairSetting(L"FindObjWindowPosition", L"0,0");
     PhpAddScalableIntegerPairSetting(L"FindObjWindowSize", L"@96|550,420");
     PhpAddStringSetting(L"FileBrowseExecutable", L"%SystemRoot%\\explorer.exe /select,\"%s\"");
     PhpAddIntegerSetting(L"FirstRun", L"1");
@@ -81,6 +81,7 @@ VOID PhAddDefaultSettings(
     PhpAddIntegerSetting(L"HideOnMinimize", L"0");
     PhpAddIntegerSetting(L"HideOtherUserProcesses", L"0");
     PhpAddIntegerSetting(L"HideSignedProcesses", L"0");
+    PhpAddIntegerSetting(L"HideWaitingConnections", L"0");
     PhpAddIntegerSetting(L"HighlightingDuration", L"3e8"); // 1000ms
     PhpAddStringSetting(L"IconSettings", L"1|1");
     PhpAddIntegerSetting(L"IconNotifyMask", L"c"); // PH_NOTIFY_SERVICE_CREATE | PH_NOTIFY_SERVICE_DELETE
@@ -91,7 +92,7 @@ VOID PhAddDefaultSettings(
     //PhpAddIntegerSetting(L"KphUnloadOnShutdown", L"0");
     PhpAddIntegerSetting(L"LogEntries", L"200"); // 512
     PhpAddStringSetting(L"LogListViewColumns", L"");
-    PhpAddIntegerPairSetting(L"LogWindowPosition", L"300,300");
+    PhpAddIntegerPairSetting(L"LogWindowPosition", L"0,0");
     PhpAddScalableIntegerPairSetting(L"LogWindowSize", L"@96|450,500");
     PhpAddIntegerSetting(L"MainWindowAlwaysOnTop", L"0");
     PhpAddStringSetting(L"MainWindowClassName", L"MainWindowClassName");
@@ -128,7 +129,7 @@ VOID PhAddDefaultSettings(
     PhpAddStringSetting(L"NetworkTreeListColumns", L"");
     PhpAddStringSetting(L"NetworkTreeListSort", L"0,1"); // 0, AscendingSortOrder
     PhpAddIntegerSetting(L"NoPurgeProcessRecords", L"0");
-    PhpAddIntegerPairSetting(L"OptionsWindowPosition", L"200,200");
+    PhpAddIntegerPairSetting(L"OptionsWindowPosition", L"0,0");
     PhpAddScalableIntegerPairSetting(L"OptionsWindowSize", L"@96|900,590");
     PhpAddIntegerPairSetting(L"PluginManagerWindowPosition", L"0,0");
     PhpAddScalableIntegerPairSetting(L"PluginManagerWindowSize", L"@96|900,590");
@@ -141,6 +142,7 @@ VOID PhAddDefaultSettings(
     PhpAddStringSetting(L"ProcPropPage", L"General");
     PhpAddIntegerPairSetting(L"ProcPropPosition", L"200,200");
     PhpAddScalableIntegerPairSetting(L"ProcPropSize", L"@96|460,580");
+    PhpAddStringSetting(L"ProcStatPropPageGroupStates", L"");
     PhpAddStringSetting(L"ProgramInspectExecutables", L"peview.exe \"%s\"");
     PhpAddIntegerSetting(L"PropagateCpuUsage", L"0");
     PhpAddStringSetting(L"RunAsProgram", L"");
@@ -171,6 +173,7 @@ VOID PhAddDefaultSettings(
     PhpAddStringSetting(L"ThreadStackTreeListColumns", L"");
     PhpAddScalableIntegerPairSetting(L"ThreadStackWindowSize", L"@96|420,400");
     PhpAddStringSetting(L"TokenGroupsListViewColumns", L"");
+    PhpAddStringSetting(L"TokenGroupsListViewSort", L"");
     PhpAddIntegerSetting(L"TokenSplitterEnable", L"0");
     PhpAddIntegerSetting(L"TokenSplitterPosition", L"150");
     PhpAddStringSetting(L"TokenPrivilegesListViewColumns", L"");

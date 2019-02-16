@@ -624,7 +624,7 @@ static VOID PhpAddSessionsToComboBox(
                 sessions[i].WinStationName[0] != UNICODE_NULL
                 )
             {
-                menuString = PhFormatString(L"%u: %s (%s\\%s)",
+                menuString = PhFormatString(L"%lu: %s (%s\\%s)",
                     sessions[i].SessionId,
                     sessions[i].WinStationName,
                     winStationInfo.Domain,
@@ -633,7 +633,7 @@ static VOID PhpAddSessionsToComboBox(
             }
             else if (winStationInfo.UserName[0] != UNICODE_NULL)
             {
-                menuString = PhFormatString(L"%u: %s\\%s",
+                menuString = PhFormatString(L"%lu: %s\\%s",
                     sessions[i].SessionId,
                     winStationInfo.Domain,
                     winStationInfo.UserName
@@ -641,14 +641,14 @@ static VOID PhpAddSessionsToComboBox(
             }
             else if (sessions[i].WinStationName[0] != UNICODE_NULL)
             {
-                menuString = PhFormatString(L"%u: %s",
+                menuString = PhFormatString(L"%lu: %s",
                     sessions[i].SessionId,
                     sessions[i].WinStationName
                     );
             }
             else
             {
-                menuString = PhFormatString(L"%u", sessions[i].SessionId);
+                menuString = PhFormatString(L"%lu", sessions[i].SessionId);
             }
 
             {
@@ -906,7 +906,7 @@ INT_PTR CALLBACK PhpRunAsDlgProc(
 
                 if (NT_SUCCESS(PhOpenProcess(
                     &processHandle,
-                    ProcessQueryAccess,
+                    PROCESS_QUERY_LIMITED_INFORMATION,
                     context->ProcessId
                     )))
                 {
@@ -918,7 +918,7 @@ INT_PTR CALLBACK PhpRunAsDlgProc(
                     {
                         if (userName = PhGetTokenUserString(tokenHandle, TRUE))
                         {
-                            SetWindowText(context->UserComboBoxWindowHandle, userName->Buffer);
+                            PhSetWindowText(context->UserComboBoxWindowHandle, userName->Buffer);
                             PhDereferenceObject(userName);
                         }
 
@@ -937,7 +937,7 @@ INT_PTR CALLBACK PhpRunAsDlgProc(
             Edit_SetSel(context->ProgramComboBoxWindowHandle, -1, -1);
 
             //if (!PhGetOwnTokenAttributes().Elevated)
-            //    SendMessage(GetDlgItem(hwndDlg, IDOK), BCM_SETSHIELD, 0, TRUE);
+            //    Button_SetElevationRequiredState(GetDlgItem(hwndDlg, IDOK), TRUE);
 
             PhInitializeWindowTheme(hwndDlg, PhEnableThemeSupport);
         }
@@ -1050,7 +1050,7 @@ INT_PTR CALLBACK PhpRunAsDlgProc(
                     if (!IsServiceAccount(username))
                     {
                         password = PhGetWindowText(context->PasswordEditWindowHandle);
-                        SetWindowText(context->PasswordEditWindowHandle, L"");
+                        PhSetWindowText(context->PasswordEditWindowHandle, L"");
                     }
 
                     //if (IsCurrentUserAccount(username))
@@ -1174,7 +1174,7 @@ INT_PTR CALLBACK PhpRunAsDlgProc(
                         PPH_STRING fileName;
 
                         fileName = PhGetFileDialogFileName(fileDialog);
-                        SetWindowText(context->ProgramComboBoxWindowHandle, fileName->Buffer);
+                        PhSetWindowText(context->ProgramComboBoxWindowHandle, fileName->Buffer);
                         PhDereferenceObject(fileName);
                     }
 

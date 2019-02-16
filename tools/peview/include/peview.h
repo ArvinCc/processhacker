@@ -46,6 +46,17 @@ extern PIMAGE_COR20_HEADER PvImageCor20Header;
 extern PPH_SYMBOL_PROVIDER PvSymbolProvider;
 extern HICON PvImageSmallIcon;
 extern HICON PvImageLargeIcon;
+extern PH_IMAGE_VERSION_INFO PvImageVersionInfo;
+
+FORCEINLINE PWSTR PvpGetStringOrNa(
+    _In_ PPH_STRING String
+    )
+{
+    if (!PhIsNullOrEmptyString(String))
+        return String->Buffer;
+    else
+        return L"N/A";
+}
 
 // peprp
 
@@ -77,6 +88,13 @@ VOID PvCopyListView(
 
 VOID PvHandleListViewNotifyForCopy(
     _In_ LPARAM lParam,
+    _In_ HWND ListViewHandle
+    );
+
+VOID PvHandleListViewCommandCopy(
+    _In_ HWND WindowHandle,
+    _In_ LPARAM lParam,
+    _In_ WPARAM wParam,
     _In_ HWND ListViewHandle
     );
 
@@ -329,6 +347,48 @@ INT_PTR CALLBACK PvpPeResourcesDlgProc(
     _In_ LPARAM lParam
     );
 
+INT_PTR CALLBACK PvpPePropStoreDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
+INT_PTR CALLBACK PvpPeExtendedAttributesDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
+INT_PTR CALLBACK PvpPeStreamsDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
+INT_PTR CALLBACK PvpPeLinksDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
+INT_PTR CALLBACK PvpPeProcessesDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
+INT_PTR CALLBACK PvpPeTlsDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
 // ELF
 
 PWSTR PvpGetSymbolTypeName(
@@ -337,6 +397,14 @@ PWSTR PvpGetSymbolTypeName(
 
 PWSTR PvpGetSymbolBindingName(
     _In_ UCHAR TypeInfo
+    );
+
+PWSTR PvpGetSymbolVisibility(
+    _In_ UCHAR OtherInfo
+    );
+
+PPH_STRING PvpGetSymbolSectionName(
+    _In_ ULONG Index
     );
 
 INT_PTR CALLBACK PvpExlfGeneralDlgProc(
@@ -354,6 +422,13 @@ INT_PTR CALLBACK PvpExlfImportsDlgProc(
     );
 
 INT_PTR CALLBACK PvpExlfExportsDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
+INT_PTR CALLBACK PvpExlfDynamicDlgProc(
     _In_ HWND hwndDlg,
     _In_ UINT uMsg,
     _In_ WPARAM wParam,

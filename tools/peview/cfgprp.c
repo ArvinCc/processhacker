@@ -79,16 +79,34 @@ INT_PTR CALLBACK PvpPeCgfDlgProc(
                     PhSetListViewSubItem(lvHandle, lvItemIndex, 1, pointer);
 
                     // Resolve name based on public symbols
-                    if (!(symbol = PhGetSymbolFromAddress(
-                        PvSymbolProvider,
-                        (ULONG64)PTR_ADD_OFFSET(PvMappedImage.NtHeaders->OptionalHeader.ImageBase, cfgFunctionEntry.Rva),
-                        &symbolResolveLevel,
-                        NULL,
-                        &symbolName,
-                        &displacement
-                        )))
+
+                    if (PvMappedImage.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
                     {
-                        continue;
+                        if (!(symbol = PhGetSymbolFromAddress(
+                            PvSymbolProvider,
+                            (ULONG64)PTR_ADD_OFFSET(PvMappedImage.NtHeaders32->OptionalHeader.ImageBase, cfgFunctionEntry.Rva),
+                            &symbolResolveLevel,
+                            NULL,
+                            &symbolName,
+                            &displacement
+                            )))
+                        {
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        if (!(symbol = PhGetSymbolFromAddress(
+                            PvSymbolProvider,
+                            (ULONG64)PTR_ADD_OFFSET(PvMappedImage.NtHeaders->OptionalHeader.ImageBase, cfgFunctionEntry.Rva),
+                            &symbolResolveLevel,
+                            NULL,
+                            &symbolName,
+                            &displacement
+                            )))
+                        {
+                            continue;
+                        }
                     }
 
                     switch (symbolResolveLevel)
@@ -165,6 +183,11 @@ INT_PTR CALLBACK PvpPeCgfDlgProc(
     case WM_NOTIFY:
         {
             PvHandleListViewNotifyForCopy(lParam, GetDlgItem(hwndDlg, IDC_LIST));
+        }
+        break;
+    case WM_CONTEXTMENU:
+        {
+            PvHandleListViewCommandCopy(hwndDlg, lParam, wParam, GetDlgItem(hwndDlg, IDC_LIST));
         }
         break;
     }

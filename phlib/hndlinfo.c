@@ -78,6 +78,13 @@ typedef struct _PHP_QUERY_OBJECT_COMMON_CONTEXT
             SECURITY_INFORMATION SecurityInformation;
             PSECURITY_DESCRIPTOR SecurityDescriptor;
         } NtSetSecurityObject;
+        struct
+        {
+            HANDLE Handle;
+            FILE_INFORMATION_CLASS FileInformationClass;
+            PVOID FileInformation;
+            ULONG FileInformationLength;
+        } NtQueryFileInformation;
     } u;
 } PHP_QUERY_OBJECT_COMMON_CONTEXT, *PPHP_QUERY_OBJECT_COMMON_CONTEXT;
 
@@ -561,7 +568,7 @@ _Callback_ PPH_STRING PhStdGetClientIdName(
         if (processInfo)
         {
             name = PhFormatString(
-                L"%.*s (%u): %u",
+                L"%.*s (%lu): %lu",
                 processInfo->ImageName.Length / sizeof(WCHAR),
                 processInfo->ImageName.Buffer,
                 HandleToUlong(ClientId->UniqueProcess),
@@ -571,7 +578,7 @@ _Callback_ PPH_STRING PhStdGetClientIdName(
         else
         {
             name = PhFormatString(
-                L"Non-existent process (%u): %u",
+                L"Non-existent process (%lu): %lu",
                 HandleToUlong(ClientId->UniqueProcess),
                 HandleToUlong(ClientId->UniqueThread)
                 );
@@ -582,7 +589,7 @@ _Callback_ PPH_STRING PhStdGetClientIdName(
         if (processInfo)
         {
             name = PhFormatString(
-                L"%.*s (%u)",
+                L"%.*s (%lu)",
                 processInfo->ImageName.Length / sizeof(WCHAR),
                 processInfo->ImageName.Buffer,
                 HandleToUlong(ClientId->UniqueProcess)
@@ -590,7 +597,7 @@ _Callback_ PPH_STRING PhStdGetClientIdName(
         }
         else
         {
-            name = PhFormatString(L"Non-existent process (%u)", HandleToUlong(ClientId->UniqueProcess));
+            name = PhFormatString(L"Non-existent process (%lu)", HandleToUlong(ClientId->UniqueProcess));
         }
     }
 
@@ -811,7 +818,7 @@ NTSTATUS PhpGetBestObjectName(
                 Handle,
                 NtCurrentProcess(),
                 &dupHandle,
-                ProcessQueryAccess,
+                PROCESS_QUERY_LIMITED_INFORMATION,
                 0,
                 0
                 );
@@ -919,7 +926,7 @@ NTSTATUS PhpGetBestObjectName(
                 Handle,
                 NtCurrentProcess(),
                 &dupHandle,
-                ThreadQueryAccess,
+                THREAD_QUERY_LIMITED_INFORMATION,
                 0,
                 0
                 );
@@ -1485,6 +1492,48 @@ ULONG PhGetObjectTypeNumber(
     return objectIndex;
 }
 
+PPH_STRING PhGetObjectTypeName(
+    _In_ ULONG TypeIndex
+    )
+{
+    static POBJECT_TYPES_INFORMATION objectTypes = NULL;
+    POBJECT_TYPE_INFORMATION objectType;
+    PPH_STRING objectTypeName = NULL;
+    ULONG i;
+
+    if (!objectTypes) // HACK (dmex)
+        PhEnumObjectTypes(&objectTypes);
+
+    if (objectTypes)
+    {
+        objectType = PH_FIRST_OBJECT_TYPE(objectTypes);
+
+        for (i = 0; i < objectTypes->NumberOfTypes; i++)
+        {
+            if (WindowsVersion >= WINDOWS_8_1)
+            {
+                if (TypeIndex == objectType->TypeIndex)
+                {
+                    objectTypeName = PhCreateStringFromUnicodeString(&objectType->TypeName);
+                    break;
+                }
+            }
+            else
+            {
+                if (TypeIndex == (i + 2))
+                {
+                    objectTypeName = PhCreateStringFromUnicodeString(&objectType->TypeName);
+                    break;
+                }
+            }
+
+            objectType = PH_NEXT_OBJECT_TYPE(objectType);
+        }
+    }
+
+    return objectTypeName;
+}
+
 PPHP_CALL_WITH_TIMEOUT_THREAD_CONTEXT PhpAcquireCallWithTimeoutThread(
     _In_opt_ PLARGE_INTEGER Timeout
     )
@@ -1706,11 +1755,11 @@ NTSTATUS PhpCommonQueryObjectRoutine(
             IO_STATUS_BLOCK isb;
 
             context->Status = NtQueryInformationFile(
-                context->u.NtQueryObject.Handle,
+                context->u.NtQueryFileInformation.Handle,
                 &isb,
-                context->u.NtQueryObject.ObjectInformation,
-                context->u.NtQueryObject.ObjectInformationLength,
-                context->u.NtQueryObject.ObjectInformationClass
+                context->u.NtQueryFileInformation.FileInformation,
+                context->u.NtQueryFileInformation.FileInformationLength,
+                context->u.NtQueryFileInformation.FileInformationClass
                 );
         }
         break;
@@ -1804,9 +1853,9 @@ NTSTATUS PhCallNtSetSecurityObjectWithTimeout(
 
 NTSTATUS PhCallNtQueryFileInformationWithTimeout(
     _In_ HANDLE Handle,
-    _In_ OBJECT_INFORMATION_CLASS ObjectInformationClass,
-    _Out_writes_bytes_opt_(ObjectInformationLength) PVOID ObjectInformation,
-    _In_ ULONG ObjectInformationLength
+    _In_ FILE_INFORMATION_CLASS FileInformationClass,
+    _Out_writes_bytes_opt_(FileInformationLength) PVOID FileInformation,
+    _In_ ULONG FileInformationLength
     )
 {
     PPHP_QUERY_OBJECT_COMMON_CONTEXT context;
@@ -1814,10 +1863,10 @@ NTSTATUS PhCallNtQueryFileInformationWithTimeout(
     context = PhAllocate(sizeof(PHP_QUERY_OBJECT_COMMON_CONTEXT));
     context->Work = NtQueryFileInformationWork;
     context->Status = STATUS_UNSUCCESSFUL;
-    context->u.NtQueryObject.Handle = Handle;
-    context->u.NtQueryObject.ObjectInformationClass = ObjectInformationClass;
-    context->u.NtQueryObject.ObjectInformation = ObjectInformation;
-    context->u.NtQueryObject.ObjectInformationLength = ObjectInformationLength;
+    context->u.NtQueryFileInformation.Handle = Handle;
+    context->u.NtQueryFileInformation.FileInformationClass = FileInformationClass;
+    context->u.NtQueryFileInformation.FileInformation = FileInformation;
+    context->u.NtQueryFileInformation.FileInformationLength = FileInformationLength;
 
     return PhpCommonQueryObjectWithTimeout(context);
 }

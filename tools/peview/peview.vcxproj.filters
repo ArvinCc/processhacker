@@ -81,6 +81,27 @@
     <ClCompile Include="exlfexports.c">
       <Filter>Source Files\Pages\Linux</Filter>
     </ClCompile>
+    <ClCompile Include="propstore.c">
+      <Filter>Source Files\Pages</Filter>
+    </ClCompile>
+    <ClCompile Include="streams.c">
+      <Filter>Source Files\Pages</Filter>
+    </ClCompile>
+    <ClCompile Include="attributes.c">
+      <Filter>Source Files\Pages</Filter>
+    </ClCompile>
+    <ClCompile Include="links.c">
+      <Filter>Source Files\Pages\Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="processes.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="exlfdynamic.c">
+      <Filter>Source Files\Pages\Linux</Filter>
+    </ClCompile>
+    <ClCompile Include="tlsprp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\peview.h">

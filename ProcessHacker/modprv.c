@@ -104,6 +104,7 @@ PPH_MODULE_PROVIDER PhCreateModuleProvider(
 
     moduleProvider->ProcessId = ProcessId;
     moduleProvider->ProcessHandle = NULL;
+    moduleProvider->ProcessFileName = NULL;
     moduleProvider->PackageFullName = NULL;
     moduleProvider->RunStatus = STATUS_SUCCESS;
 
@@ -201,6 +202,7 @@ VOID PhpModuleProviderDeleteProcedure(
         }
     }
 
+    if (moduleProvider->ProcessFileName) PhDereferenceObject(moduleProvider->ProcessFileName);
     if (moduleProvider->PackageFullName) PhDereferenceObject(moduleProvider->PackageFullName);
     if (moduleProvider->ProcessHandle) NtClose(moduleProvider->ProcessHandle);
 }
@@ -560,11 +562,19 @@ VOID PhModuleProviderUpdate(
 
             if (!moduleProvider->HaveFirst)
             {
-                // moduleItem->IsFirst = i == 0;
-                if (PhEqualString(moduleProvider->ProcessFileName, moduleItem->FileName, FALSE))
+                if (WindowsVersion < WINDOWS_10)
                 {
-                    moduleItem->IsFirst = TRUE;
+                    moduleItem->IsFirst = i == 0;
                     moduleProvider->HaveFirst = TRUE;
+                }
+                else
+                {
+                    // Windows loads the PE image first and WSL loads the ELF image last (dmex)
+                    if (moduleProvider->ProcessFileName && PhEqualString(moduleProvider->ProcessFileName, moduleItem->FileName, FALSE))
+                    {
+                        moduleItem->IsFirst = TRUE;
+                        moduleProvider->HaveFirst = TRUE;
+                    }
                 }
             }
 
@@ -678,6 +688,9 @@ VOID PhModuleProviderUpdate(
             PhDereferenceObject(moduleItem);
         }
     }
+
+    if (!moduleProvider->HaveFirst) // Some processes don't have a primary image (e.g. System/Registry/Secure System) (dmex)
+        moduleProvider->HaveFirst = TRUE;
 
     // Free the modules list.
 

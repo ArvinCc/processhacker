@@ -35,6 +35,7 @@ PH_CALLBACK_REGISTRATION PluginMenuItemCallbackRegistration;
 PH_CALLBACK_REGISTRATION PluginTreeNewMessageCallbackRegistration;
 PH_CALLBACK_REGISTRATION PluginPhSvcRequestCallbackRegistration;
 PH_CALLBACK_REGISTRATION MainWindowShowingCallbackRegistration;
+PH_CALLBACK_REGISTRATION ProcessesUpdatedCallbackRegistration;
 PH_CALLBACK_REGISTRATION ProcessPropertiesInitializingCallbackRegistration;
 PH_CALLBACK_REGISTRATION HandlePropertiesInitializingCallbackRegistration;
 PH_CALLBACK_REGISTRATION ProcessMenuInitializingCallbackRegistration;
@@ -45,9 +46,10 @@ PH_CALLBACK_REGISTRATION NetworkTreeNewInitializingCallbackRegistration;
 PH_CALLBACK_REGISTRATION SystemInformationInitializingCallbackRegistration;
 PH_CALLBACK_REGISTRATION MiniInformationInitializingCallbackRegistration;
 PH_CALLBACK_REGISTRATION TrayIconsInitializingCallbackRegistration;
-PH_CALLBACK_REGISTRATION ProcessesUpdatedCallbackRegistration;
+PH_CALLBACK_REGISTRATION ProcessItemsUpdatedCallbackRegistration;
 PH_CALLBACK_REGISTRATION NetworkItemsUpdatedCallbackRegistration;
 
+ULONG ProcessesUpdatedCount = 0;
 static HANDLE ModuleProcessId = NULL;
 
 VOID NTAPI LoadCallback(
@@ -100,7 +102,7 @@ VOID NTAPI MenuItemCallback(
         break;
     case ID_PROCESS_WSWATCH:
         {
-            EtShowWsWatchDialog(PhMainWndHandle, menuItem->Context);
+            EtShowWsWatchDialog(menuItem->OwnerWindow, menuItem->Context);
         }
         break;
     case ID_THREAD_CANCELIO:
@@ -113,7 +115,7 @@ VOID NTAPI MenuItemCallback(
             EtShowModuleServicesDialog(
                 menuItem->OwnerWindow,
                 ModuleProcessId,
-                ((PPH_MODULE_ITEM)menuItem->Context)->Name->Buffer
+                ((PPH_MODULE_ITEM)menuItem->Context)->Name
                 );
         }
         break;
@@ -147,6 +149,19 @@ VOID NTAPI MainWindowShowingCallback(
     )
 {
     EtInitializeDiskTab();
+    EtRegisterToolbarGraphs();
+}
+
+VOID NTAPI ProcessesUpdatedCallback(
+    _In_opt_ PVOID Parameter,
+    _In_opt_ PVOID Context
+    )
+{
+    if (ProcessesUpdatedCount < 2)
+    {
+        ProcessesUpdatedCount++;
+        return;
+    }
 }
 
 VOID NTAPI ProcessPropertiesInitializingCallback(
@@ -318,7 +333,7 @@ VOID NTAPI TrayIconsInitializingCallback(
     EtRegisterNotifyIcons(Parameter);
 }
 
-VOID NTAPI ProcessesUpdatedCallback(
+VOID NTAPI ProcessItemsUpdatedCallback(
     _In_opt_ PVOID Parameter,
     _In_opt_ PVOID Context
     )
@@ -506,8 +521,12 @@ LOGICAL DllMain(
                 { StringSettingType, SETTING_NAME_UNLOADED_COLUMNS, L"" },
                 { IntegerPairSettingType, SETTING_NAME_MODULE_SERVICES_WINDOW_POSITION, L"0,0" },
                 { ScalableIntegerPairSettingType, SETTING_NAME_MODULE_SERVICES_WINDOW_SIZE, L"@96|850,490" },
+                { StringSettingType, SETTING_NAME_MODULE_SERVICES_COLUMNS, L"" },
                 { IntegerPairSettingType, SETTING_NAME_GPU_NODES_WINDOW_POSITION, L"0,0" },
                 { ScalableIntegerPairSettingType, SETTING_NAME_GPU_NODES_WINDOW_SIZE, L"@96|850,490" },
+                { IntegerPairSettingType, SETTING_NAME_WSWATCH_WINDOW_POSITION, L"0,0" },
+                { ScalableIntegerPairSettingType, SETTING_NAME_WSWATCH_WINDOW_SIZE, L"@96|325,266" },
+                { StringSettingType, SETTING_NAME_WSWATCH_COLUMNS, L"" },
             };
 
             PluginInstance = PhRegisterPlugin(PLUGIN_NAME, Instance, &info);
@@ -563,6 +582,13 @@ LOGICAL DllMain(
                 NULL,
                 &MainWindowShowingCallbackRegistration
                 );
+            PhRegisterCallback(
+                PhGetGeneralCallback(GeneralCallbackProcessesUpdated),
+                ProcessesUpdatedCallback,
+                NULL,
+                &ProcessesUpdatedCallbackRegistration
+                );
+
             PhRegisterCallback(
                 PhGetGeneralCallback(GeneralCallbackProcessPropertiesInitializing),
                 ProcessPropertiesInitializingCallback,
@@ -627,9 +653,9 @@ LOGICAL DllMain(
 
             PhRegisterCallback(
                 PhGetGeneralCallback(GeneralCallbackProcessProviderUpdatedEvent),
-                ProcessesUpdatedCallback,
+                ProcessItemsUpdatedCallback,
                 NULL,
-                &ProcessesUpdatedCallbackRegistration
+                &ProcessItemsUpdatedCallbackRegistration
                 );
             PhRegisterCallback(
                 PhGetGeneralCallback(GeneralCallbackNetworkProviderUpdatedEvent),

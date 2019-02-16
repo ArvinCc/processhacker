@@ -31,6 +31,8 @@ VOID PhAddDefaultSettings(
 {
     PhpAddIntegerSetting(L"FirstRun", L"1");
     PhpAddStringSetting(L"Font", L""); // null
+    PhpAddIntegerSetting(L"EnableThemeSupport", L"0");
+    PhpAddIntegerSetting(L"GraphColorMode", L"0");
     PhpAddIntegerSetting(L"HashAlgorithm", L"0");
     PhpAddIntegerSetting(L"MaxSizeUnit", L"6");
     PhpAddStringSetting(L"MainWindowPage", L"General");
@@ -42,11 +44,20 @@ VOID PhAddDefaultSettings(
     PhpAddStringSetting(L"ImageImportsListViewColumns", L"");
     PhpAddStringSetting(L"ImageCfgListViewColumns", L"");
     PhpAddStringSetting(L"ImageResourcesListViewColumns", L"");
+    PhpAddStringSetting(L"ImageAttributesListViewColumns", L"");
+    PhpAddStringSetting(L"ImagePropertiesListViewColumns", L"");
+    PhpAddStringSetting(L"ImageStreamsListViewColumns", L"");
+    PhpAddStringSetting(L"ImageHardLinksListViewColumns", L"");
+    PhpAddStringSetting(L"ImagePidsListViewColumns", L"");
+    PhpAddStringSetting(L"ImageTlsListViewColumns", L"");
     PhpAddStringSetting(L"LibListViewColumns", L"");
     PhpAddStringSetting(L"PdbTreeListColumns", L"");
 
     // Wsl properties
     PhpAddStringSetting(L"GeneralWslTreeListColumns", L"");
+    PhpAddStringSetting(L"DynamicWslListViewColumns", L"");
+    PhpAddStringSetting(L"ImportsWslListViewColumns", L"");
+    PhpAddStringSetting(L"ExportsWslListViewColumns", L"");
 }
 
 VOID PhUpdateCachedSettings(

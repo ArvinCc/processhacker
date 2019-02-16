@@ -572,6 +572,7 @@
 #define ID_PROCESS_VIRTUALIZATION       40034
 #define ID_PROCESS_AFFINITY             40035
 #define ID_PROCESS_CREATEDUMPFILE       40036
+#define ID_MISCELLANEOUS_SETCRITICAL    40038
 #define ID_MISCELLANEOUS_DETACHFROMDEBUGGER 40039
 #define ID_PRIORITY_REALTIME            40048
 #define ID_PRIORITY_HIGH                40049
@@ -672,7 +673,6 @@
 #define ID_ESC_EXIT                     40190
 #define ID_PROCESS_COPY                 40194
 #define ID_THREAD_COPY                  40195
-#define ID_PRIVILEGE_COPY               40196
 #define ID_NETWORK_COPY                 40197
 #define ID_SERVICE_COPY                 40198
 #define ID_MODULE_COPY                  40199
@@ -725,6 +725,7 @@
 #define ID_DIGIT7                       40269
 #define ID_DIGIT8                       40270
 #define ID_DIGIT9                       40271
+#define ID_VIEW_HIDEWAITINGCONNECTIONS  40272
 #define ID_VIEW_HIDEDRIVERSERVICES      40273
 #define ID_VIEW_SECTIONPLACEHOLDER      40274
 #define ID_VIEW_SCROLLTONEWPROCESSES    40275
@@ -741,6 +742,14 @@
 #define ID_MINIINFO_REFRESHAUTOMATICALLY 40289
 #define IDC_MAXSCREEN                   40293
 #define ID_EMPTY_COMBINEMEMORYLISTS     40295
+#define ID_PRIVILEGE_RESET              40296
+#define ID_GROUP_ENABLE                 40297
+#define ID_THREAD_CRITICAL              40297
+#define ID_GROUP_DISABLE                40298
+#define ID_GROUP_RESET                  40299
+#define ID_TOOLS_SCM_PERMISSIONS        40300
+#define ID_TOOLS_RDP_PERMISSIONS        40301
+#define ID_UIACCESS_REMOVE              40302
 #define IDDYNAMIC                       50000
 #define IDPLUGINS                       55000
 
@@ -749,7 +758,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        254
-#define _APS_NEXT_COMMAND_VALUE         40297
+#define _APS_NEXT_COMMAND_VALUE         40298
 #define _APS_NEXT_CONTROL_VALUE         1410
 #define _APS_NEXT_SYMED_VALUE           170
 #endif

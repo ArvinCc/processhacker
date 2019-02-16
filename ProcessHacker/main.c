@@ -3,7 +3,7 @@
  *   main program
  *
  * Copyright (C) 2009-2016 wj32
- * Copyright (C) 2017-2018 dmex
+ * Copyright (C) 2017-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -187,7 +187,7 @@ INT WINAPI wWinMain(
         RtlExitUserProcess(STATUS_SUCCESS);
     }
 
-    if (PhPluginsEnabled = PhGetIntegerSetting(L"EnablePlugins") && !PhStartupParameters.NoPlugins)
+    if (PhPluginsEnabled && !PhStartupParameters.NoPlugins)
     {
         PhLoadPlugins();
     }
@@ -548,6 +548,133 @@ BOOLEAN PhInitializeRestartPolicy(
     return TRUE;
 }
 
+#ifndef DEBUG
+#include <symprv.h>
+#include <minidumpapiset.h>
+
+static ULONG CALLBACK PhpUnhandledExceptionCallback(
+    _In_ PEXCEPTION_POINTERS ExceptionInfo
+    )
+{
+    PPH_STRING errorMessage;
+    INT result;
+    PPH_STRING message;
+    TASKDIALOGCONFIG config = { sizeof(TASKDIALOGCONFIG) };
+    TASKDIALOG_BUTTON buttons[2];
+
+    if (NT_NTWIN32(ExceptionInfo->ExceptionRecord->ExceptionCode))
+        errorMessage = PhGetStatusMessage(0, WIN32_FROM_NTSTATUS(ExceptionInfo->ExceptionRecord->ExceptionCode));
+    else
+        errorMessage = PhGetStatusMessage(ExceptionInfo->ExceptionRecord->ExceptionCode, 0);
+
+    message = PhFormatString(
+        L"Error code: 0x%08X (%s)",
+        ExceptionInfo->ExceptionRecord->ExceptionCode,
+        PhGetStringOrEmpty(errorMessage)
+        );
+
+    config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION;
+    config.dwCommonButtons = TDCBF_CLOSE_BUTTON;
+    config.pszWindowTitle = PhApplicationName;
+    config.pszMainIcon = TD_ERROR_ICON;
+    config.pszMainInstruction = L"Process Hacker has crashed :(";
+    config.pszContent = message->Buffer;
+
+    buttons[0].nButtonID = IDYES;
+    buttons[0].pszButtonText = L"Minidump";
+    buttons[1].nButtonID = IDRETRY;
+    buttons[1].pszButtonText = L"Restart";
+
+    config.cButtons = RTL_NUMBER_OF(buttons);
+    config.pButtons = buttons;
+    config.nDefaultButton = IDCLOSE;
+
+    if (TaskDialogIndirect(
+        &config,
+        &result,
+        NULL,
+        NULL
+        ) == S_OK)
+    {
+        switch (result)
+        {
+        case IDRETRY:
+            {
+                PhShellProcessHacker(
+                    NULL,
+                    NULL,
+                    SW_SHOW,
+                    0,
+                    PH_SHELL_APP_PROPAGATE_PARAMETERS | PH_SHELL_APP_PROPAGATE_PARAMETERS_IGNORE_VISIBILITY,
+                    0,
+                    NULL
+                    );
+            }
+            break;
+        case IDYES:
+            {
+                static PH_STRINGREF dumpFilePath = PH_STRINGREF_INIT(L"%USERPROFILE%\\Desktop\\");
+                HANDLE fileHandle;
+                PPH_STRING dumpDirectory;
+                PPH_STRING dumpFileName;
+                WCHAR alphastring[16] = L"";
+
+                dumpDirectory = PhExpandEnvironmentStrings(&dumpFilePath);
+                PhGenerateRandomAlphaString(alphastring, RTL_NUMBER_OF(alphastring));
+
+                dumpFileName = PhConcatStrings(
+                    4,
+                    PhGetString(dumpDirectory),
+                    L"\\ProcessHacker_",
+                    alphastring,
+                    L"_DumpFile.dmp"
+                    );
+
+                if (NT_SUCCESS(PhCreateFileWin32(
+                    &fileHandle,
+                    dumpFileName->Buffer,
+                    FILE_GENERIC_WRITE,
+                    FILE_ATTRIBUTE_NORMAL,
+                    FILE_SHARE_READ | FILE_SHARE_DELETE,
+                    FILE_OVERWRITE_IF,
+                    FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
+                    )))
+                {
+                    MINIDUMP_EXCEPTION_INFORMATION exceptionInfo;
+
+                    exceptionInfo.ThreadId = HandleToUlong(NtCurrentThreadId());
+                    exceptionInfo.ExceptionPointers = ExceptionInfo;
+                    exceptionInfo.ClientPointers = FALSE;
+
+                    PhWriteMiniDumpProcess(
+                        NtCurrentProcess(),
+                        NtCurrentProcessId(),
+                        fileHandle,
+                        MiniDumpNormal,
+                        &exceptionInfo,
+                        NULL,
+                        NULL
+                        );
+
+                    NtClose(fileHandle);
+                }
+
+                PhDereferenceObject(dumpFileName);
+                PhDereferenceObject(dumpDirectory);
+            }
+            break;
+        }
+    }
+
+    RtlExitUserProcess(ExceptionInfo->ExceptionRecord->ExceptionCode);
+
+    PhDereferenceObject(message);
+    PhDereferenceObject(errorMessage);
+
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+
 BOOLEAN PhInitializeExceptionPolicy(
     VOID
     )
@@ -560,16 +687,21 @@ BOOLEAN PhInitializeExceptionPolicy(
         errorMode &= ~(SEM_NOOPENFILEERRORBOX | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
         PhSetProcessErrorMode(NtCurrentProcess(), errorMode);
     }
+
+    // NOTE: We really shouldn't be using this function since it can be
+    // preempted by the Win32 SetUnhandledExceptionFilter function. (dmex)
+    RtlSetUnhandledExceptionFilter(PhpUnhandledExceptionCallback);
 #endif
+
     return TRUE;
-}   
+}
 
 BOOLEAN PhInitializeNamespacePolicy(
     VOID
     )
 {
     HANDLE mutantHandle;
-    PPH_STRING objectName;
+    WCHAR objectName[PH_INT64_STR_LEN_1];
     OBJECT_ATTRIBUTES objectAttributes;
     UNICODE_STRING objectNameUs;
     PH_FORMAT format[2];
@@ -577,9 +709,18 @@ BOOLEAN PhInitializeNamespacePolicy(
     PhInitFormatS(&format[0], L"PhMutant_");
     PhInitFormatU(&format[1], HandleToUlong(NtCurrentProcessId()));
 
-    objectName = PhFormat(format, RTL_NUMBER_OF(format), 16);
-    PhStringRefToUnicodeString(&objectName->sr, &objectNameUs);
+    if (!PhFormatToBuffer(
+        format,
+        RTL_NUMBER_OF(format),
+        objectName,
+        sizeof(objectName),
+        NULL
+        ))
+    {
+        return FALSE;
+    }
 
+    RtlInitUnicodeString(&objectNameUs, objectName);
     InitializeObjectAttributes(
         &objectAttributes,
         &objectNameUs,
@@ -595,11 +736,9 @@ BOOLEAN PhInitializeNamespacePolicy(
         TRUE
         )))
     {
-        PhDereferenceObject(objectName);
         return TRUE;
     }
 
-    PhDereferenceObject(objectName);
     return FALSE;
 }
 
@@ -618,7 +757,8 @@ BOOLEAN PhInitializeMitigationPolicy(
      PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_NO_REMOTE_ALWAYS_ON | \
      PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_NO_LOW_LABEL_ALWAYS_ON)
 
-    static PH_STRINGREF commandlinePart = PH_STRINGREF_INIT(L" -nomp");
+    static PH_STRINGREF nompCommandlinePart = PH_STRINGREF_INIT(L" -nomp");
+    static PH_STRINGREF rasCommandlinePart = PH_STRINGREF_INIT(L" -ras");
     BOOLEAN success = TRUE;
     PH_STRINGREF commandlineSr;
     PPH_STRING commandline = NULL;
@@ -631,7 +771,12 @@ BOOLEAN PhInitializeMitigationPolicy(
 
     PhUnicodeStringToStringRef(&NtCurrentPeb()->ProcessParameters->CommandLine, &commandlineSr);
 
-    if (PhEndsWithStringRef(&commandlineSr, &commandlinePart, FALSE))
+    // NOTE: The SCM has a bug where calling CreateProcess with PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY to restart the service with mitigations
+    // causes the SCM to spew EVENT_SERVICE_DIFFERENT_PID_CONNECTED in the system eventlog and terminate the service. (dmex)
+    // WARN: This bug makes it impossible to start services with mitigation polices when the service doesn't have an IFEO key...
+    if (PhFindStringInStringRef(&commandlineSr, &rasCommandlinePart, FALSE) != -1)
+        return TRUE;
+    if (PhEndsWithStringRef(&commandlineSr, &nompCommandlinePart, FALSE))
         return TRUE;
 
     if (!(LdrSystemDllInitBlock_I = PhGetDllProcedureAddress(L"ntdll.dll", "LdrSystemDllInitBlock", 0)))
@@ -654,7 +799,7 @@ BOOLEAN PhInitializeMitigationPolicy(
     if (!UpdateProcThreadAttribute(startupInfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, &(ULONG64){ DEFAULT_MITIGATION_POLICY_FLAGS }, sizeof(ULONG64), NULL, NULL))
         goto CleanupExit;
 
-    commandline = PhConcatStringRef2(&commandlineSr, &commandlinePart);
+    commandline = PhConcatStringRef2(&commandlineSr, &nompCommandlinePart);
 
     if (NT_SUCCESS(PhCreateProcessWin32Ex(
         NULL,
@@ -955,6 +1100,7 @@ VOID PhpInitializeSettings(
     }
 
     // Apply basic global settings.
+    PhPluginsEnabled = !!PhGetIntegerSetting(L"EnablePlugins");
     PhMaxSizeUnit = PhGetIntegerSetting(L"MaxSizeUnit");
 
     if (PhGetIntegerSetting(L"SampleCountAutomatic"))

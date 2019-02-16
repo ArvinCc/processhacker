@@ -3,7 +3,7 @@
  *   Main window: Processes tab
  *
  * Copyright (C) 2009-2016 wj32
- * Copyright (C) 2017 dmex
+ * Copyright (C) 2017-2018 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -386,13 +386,13 @@ VOID PhMwpSetProcessMenuPriorityChecks(
 {
     HANDLE processHandle;
     PROCESS_PRIORITY_CLASS priorityClass = { 0 };
-    IO_PRIORITY_HINT ioPriority = -1;
-    ULONG pagePriority = -1;
+    IO_PRIORITY_HINT ioPriority = ULONG_MAX;
+    ULONG pagePriority = ULONG_MAX;
     ULONG id = 0;
 
     if (NT_SUCCESS(PhOpenProcess(
         &processHandle,
-        ProcessQueryAccess,
+        PROCESS_QUERY_LIMITED_INFORMATION,
         ProcessId
         )))
     {
@@ -408,7 +408,7 @@ VOID PhMwpSetProcessMenuPriorityChecks(
                 &ioPriority
                 )))
             {
-                ioPriority = -1;
+                ioPriority = ULONG_MAX;
             }
         }
 
@@ -419,7 +419,7 @@ VOID PhMwpSetProcessMenuPriorityChecks(
                 &pagePriority
                 )))
             {
-                pagePriority = -1;
+                pagePriority = ULONG_MAX;
             }
         }
 
@@ -458,7 +458,7 @@ VOID PhMwpSetProcessMenuPriorityChecks(
         }
     }
 
-    if (SetIoPriority && ioPriority != -1)
+    if (SetIoPriority && ioPriority != ULONG_MAX)
     {
         id = 0;
 
@@ -486,7 +486,7 @@ VOID PhMwpSetProcessMenuPriorityChecks(
         }
     }
 
-    if (SetPagePriority && pagePriority != -1)
+    if (SetPagePriority && pagePriority != ULONG_MAX)
     {
         id = 0;
 
@@ -534,8 +534,7 @@ VOID PhMwpInitializeProcessMenu(
     {
         // All menu items are enabled by default.
 
-        // If the user selected a fake process, disable all but
-        // a few menu items.
+        // If the user selected a fake process, disable all but a few menu items.
         if (
             PH_IS_FAKE_PROCESS_ID(Processes[0]->ProcessId) || 
             Processes[0]->ProcessId == SYSTEM_IDLE_PROCESS_ID ||
@@ -550,6 +549,23 @@ VOID PhMwpInitializeProcessMenu(
         if (PhIsNullOrEmptyString(Processes[0]->FileName) || !RtlDoesFileExists_U(PhGetString(Processes[0]->FileName)))
         {
             PhEnableEMenuItem(Menu, ID_PROCESS_OPENFILELOCATION, FALSE);  
+        }
+
+        // Critical
+        if (Processes[0]->QueryHandle)
+        {
+            BOOLEAN breakOnTermination;
+
+            if (NT_SUCCESS(PhGetProcessBreakOnTermination(
+                Processes[0]->QueryHandle,
+                &breakOnTermination
+                )))
+            {
+                if (breakOnTermination)
+                {
+                    PhSetFlagsEMenuItem(Menu, ID_MISCELLANEOUS_SETCRITICAL, PH_EMENU_CHECKED, PH_EMENU_CHECKED);
+                }
+            }
         }
     }
     else
@@ -608,19 +624,14 @@ VOID PhMwpInitializeProcessMenu(
     // Virtualization
     if (NumberOfProcesses == 1)
     {
-        HANDLE processHandle;
         HANDLE tokenHandle;
         BOOLEAN allowed = FALSE;
         BOOLEAN enabled = FALSE;
 
-        if (NT_SUCCESS(PhOpenProcess(
-            &processHandle,
-            ProcessQueryAccess,
-            Processes[0]->ProcessId
-            )))
+        if (Processes[0]->QueryHandle)
         {
             if (NT_SUCCESS(PhOpenProcessToken(
-                processHandle,
+                Processes[0]->QueryHandle,
                 TOKEN_QUERY,
                 &tokenHandle
                 )))
@@ -631,8 +642,6 @@ VOID PhMwpInitializeProcessMenu(
 
                 NtClose(tokenHandle);
             }
-
-            NtClose(processHandle);
         }
 
         if (!allowed)
@@ -819,7 +828,7 @@ VOID PhMwpOnProcessAdded(
                 PhMwpLastNotificationDetails.ProcessId = ProcessItem->ProcessId;
 
                 PhShowIconNotification(L"Process Created", PhaFormatString(
-                    L"The process %s (%u) was created by %s (%u)",
+                    L"The process %s (%lu) was created by %s (%lu)",
                     ProcessItem->ProcessName->Buffer,
                     HandleToUlong(ProcessItem->ProcessId),
                     PhGetStringOrDefault(parentName, L"Unknown process"),
@@ -874,7 +883,7 @@ VOID PhMwpOnProcessRemoved(
             PhMwpLastNotificationDetails.ProcessId = ProcessItem->ProcessId;
 
             PhShowIconNotification(L"Process Terminated", PhaFormatString(
-                L"The process %s (%u) was terminated.",
+                L"The process %s (%lu) was terminated.",
                 ProcessItem->ProcessName->Buffer,
                 HandleToUlong(ProcessItem->ProcessId)
                 )->Buffer, NIIF_INFO);

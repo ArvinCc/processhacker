@@ -204,7 +204,6 @@ typedef struct _PH_MAPPED_IMAGE_EXPORT_FUNCTION
     PSTR ForwardedName;
 } PH_MAPPED_IMAGE_EXPORT_FUNCTION, *PPH_MAPPED_IMAGE_EXPORT_FUNCTION;
 
-
 PHLIBAPI
 NTSTATUS
 NTAPI
@@ -427,6 +426,38 @@ PhGetMappedImageResources(
     _In_ PPH_MAPPED_IMAGE MappedImage
     );
 
+typedef struct _PH_IMAGE_TLS_CALLBACK_ENTRY
+{
+    ULONGLONG Index;
+    ULONGLONG Address;
+} PH_IMAGE_TLS_CALLBACK_ENTRY, *PPH_IMAGE_TLS_CALLBACK_ENTRY;
+
+typedef struct _PH_MAPPED_IMAGE_TLS_CALLBACKS
+{
+    PPH_MAPPED_IMAGE MappedImage;
+    PIMAGE_DATA_DIRECTORY DataDirectory;
+
+    union
+    {
+        PIMAGE_TLS_DIRECTORY32 TlsDirectory32;
+        PIMAGE_TLS_DIRECTORY64 TlsDirectory64;
+    };
+
+    PVOID CallbackIndexes;
+    PVOID CallbackAddress;
+
+    ULONG NumberOfEntries;
+    PPH_IMAGE_TLS_CALLBACK_ENTRY Entries;
+} PH_MAPPED_IMAGE_TLS_CALLBACKS, *PPH_MAPPED_IMAGE_TLS_CALLBACKS;
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhGetMappedImageTlsCallbacks(
+    _Out_ PPH_MAPPED_IMAGE_TLS_CALLBACKS TlsCallbacks,
+    _In_ PPH_MAPPED_IMAGE MappedImage
+    );
+
 // maplib
 
 struct _PH_MAPPED_ARCHIVE;
@@ -570,10 +601,12 @@ typedef struct _PH_ELF_IMAGE_SYMBOL_ENTRY
         };
     };
     UCHAR TypeInfo;
+    UCHAR OtherInfo;
+    ULONG SectionIndex;
     ULONGLONG Address;
     ULONGLONG Size;
-    WCHAR Name[0x80];
-    WCHAR Module[0x80];
+    WCHAR Name[MAX_PATH * 2];
+    WCHAR Module[MAX_PATH * 2];
 } PH_ELF_IMAGE_SYMBOL_ENTRY, *PPH_ELF_IMAGE_SYMBOL_ENTRY;
 
 BOOLEAN PhGetMappedWslImageSymbols(
@@ -583,6 +616,22 @@ BOOLEAN PhGetMappedWslImageSymbols(
 
 VOID PhFreeMappedWslImageSymbols(
     _In_ PPH_LIST ImageSymbols
+    );
+
+typedef struct _PH_ELF_IMAGE_DYNAMIC_ENTRY
+{
+    LONGLONG Tag;
+    PWSTR Type;
+    PPH_STRING Value;
+} PH_ELF_IMAGE_DYNAMIC_ENTRY, *PPH_ELF_IMAGE_DYNAMIC_ENTRY;
+
+BOOLEAN PhGetMappedWslImageDynamic(
+    _In_ PPH_MAPPED_IMAGE MappedWslImage,
+    _Out_ PPH_LIST *DynamicSymbols
+    );
+
+VOID PhFreeMappedWslImageDynamic(
+    _In_ PPH_LIST ImageDynamic
     );
 
 #ifdef __cplusplus

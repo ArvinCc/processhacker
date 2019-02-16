@@ -108,14 +108,20 @@ VOID NTAPI ProcessPropertiesInitializingCallback(
     )
 {
     PPH_PLUGIN_PROCESS_PROPCONTEXT propContext = Parameter;
-    BOOLEAN isDotNet;
+    BOOLEAN isDotNet = FALSE;
+    ULONG flags = 0;
 
-    if (NT_SUCCESS(PhGetProcessIsDotNet(propContext->ProcessItem->ProcessId, &isDotNet)))
+    if (NT_SUCCESS(PhGetProcessIsDotNetEx(propContext->ProcessItem->ProcessId, NULL, 0, &isDotNet, &flags)))
     {
         if (isDotNet)
         {
             AddAsmPageToPropContext(propContext);
             AddPerfPageToPropContext(propContext);
+        }
+        else if (flags & PH_CLR_JIT_PRESENT) // CoreCLR support. (dmex)
+        {
+            isDotNet = TRUE;
+            AddAsmPageToPropContext(propContext);
         }
 
         if (propContext->ProcessItem->IsDotNet != isDotNet)
@@ -203,7 +209,8 @@ LOGICAL DllMain(
                 { IntegerSettingType, SETTING_NAME_ASM_TREE_LIST_FLAGS, L"0" },
                 { IntegerSettingType, SETTING_NAME_DOT_NET_CATEGORY_INDEX, L"5" },
                 { StringSettingType, SETTING_NAME_DOT_NET_COUNTERS_COLUMNS, L"" },
-                { IntegerSettingType, SETTING_NAME_DOT_NET_SHOW_BYTE_SIZE, L"1" }
+                { StringSettingType, SETTING_NAME_DOT_NET_COUNTERS_SORTCOLUMN, L"" },
+                { StringSettingType, SETTING_NAME_DOT_NET_COUNTERS_GROUPSTATES, L"" }
             };
 
             PluginInstance = PhRegisterPlugin(PLUGIN_NAME, Instance, &info);

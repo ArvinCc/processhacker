@@ -2539,6 +2539,7 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS
     PVOID PackageDependencyData;
     ULONG ProcessGroupId;
     ULONG LoaderThreads;
+    UNICODE_STRING RedirectionDllName; // REDSTONE4
 } RTL_USER_PROCESS_PARAMETERS, *PRTL_USER_PROCESS_PARAMETERS;
 
 #define RTL_USER_PROC_PARAMS_NORMALIZED 0x00000001
@@ -2634,6 +2635,17 @@ RtlCreateUserProcess(
     _In_ BOOLEAN InheritHandles,
     _In_opt_ HANDLE DebugPort,
     _In_opt_ HANDLE TokenHandle, // used to be ExceptionPort
+    _Out_ PRTL_USER_PROCESS_INFORMATION ProcessInformation
+    );
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlCreateUserProcessEx(
+    _In_ PUNICODE_STRING NtImagePathName,
+    _In_ PRTL_USER_PROCESS_PARAMETERS ProcessParameters,
+    _In_ BOOLEAN InheritHandles,
+    _Reserved_ ULONG Flags,
     _Out_ PRTL_USER_PROCESS_INFORMATION ProcessInformation
     );
 
@@ -3277,7 +3289,7 @@ NTAPI
 RtlSetEnvironmentVariable(
     _In_opt_ PVOID *Environment,
     _In_ PUNICODE_STRING Name,
-    _In_ PUNICODE_STRING Value
+    _In_opt_ PUNICODE_STRING Value
     );
 
 #if (PHNT_VERSION >= PHNT_VISTA)
@@ -3385,6 +3397,13 @@ RTL_PATH_TYPE
 NTAPI
 RtlDetermineDosPathNameType_U(
     _In_ PWSTR DosFileName
+    );
+
+NTSYSAPI
+RTL_PATH_TYPE
+NTAPI
+RtlDetermineDosPathNameType_Ustr(
+    _In_ PCUNICODE_STRING DosFileName
     );
 
 NTSYSAPI
@@ -7138,7 +7157,9 @@ RtlGetFrame(
     VOID
     );
 
-#define RTL_STACK_WALKING_MODE_FRAMES_TO_SKIP_SHIFT 8
+#define RTL_WALK_USER_MODE_STACK 0x00000001
+#define RTL_WALK_VALID_FLAGS 0x00000001
+#define RTL_STACK_WALKING_MODE_FRAMES_TO_SKIP_SHIFT 0x00000008
 
 // private
 NTSYSAPI

@@ -128,7 +128,7 @@ static INT_PTR CALLBACK PhpProcessAffinityDlgProc(
 
                 if (NT_SUCCESS(status = PhOpenProcess(
                     &processHandle,
-                    ProcessQueryAccess,
+                    PROCESS_QUERY_LIMITED_INFORMATION,
                     context->ProcessItem->ProcessId
                     )))
                 {
@@ -149,7 +149,7 @@ static INT_PTR CALLBACK PhpProcessAffinityDlgProc(
 
                 if (NT_SUCCESS(status = PhOpenThread(
                     &threadHandle,
-                    ThreadQueryAccess,
+                    THREAD_QUERY_LIMITED_INFORMATION,
                     context->ThreadItem->ThreadId
                     )))
                 {
@@ -164,7 +164,7 @@ static INT_PTR CALLBACK PhpProcessAffinityDlgProc(
 
                         if (NT_SUCCESS(PhOpenProcess(
                             &processHandle,
-                            ProcessQueryAccess,
+                            PROCESS_QUERY_LIMITED_INFORMATION,
                             basicInfo.ClientId.UniqueProcess
                             )))
                         {
@@ -272,7 +272,7 @@ static INT_PTR CALLBACK PhpProcessAffinityDlgProc(
 
                         if (NT_SUCCESS(status = PhOpenThread(
                             &threadHandle,
-                            ThreadSetAccess,
+                            THREAD_SET_LIMITED_INFORMATION,
                             context->ThreadItem->ThreadId
                             )))
                         {

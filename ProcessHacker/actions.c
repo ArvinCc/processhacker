@@ -791,7 +791,7 @@ static BOOLEAN PhpShowContinueMessageProcesses(
     for (i = 0; i < NumberOfProcesses; i++)
     {
         HANDLE processHandle;
-        ULONG breakOnTermination = 0;
+        BOOLEAN breakOnTermination = FALSE;
 
         if (PhpIsDangerousProcess(Processes[i]->ProcessId))
         {
@@ -802,11 +802,11 @@ static BOOLEAN PhpShowContinueMessageProcesses(
 
         if (NT_SUCCESS(PhOpenProcess(&processHandle, PROCESS_QUERY_INFORMATION, Processes[i]->ProcessId)))
         {
-            NtQueryInformationProcess(processHandle, ProcessBreakOnTermination, &breakOnTermination, sizeof(ULONG), NULL);
+            PhGetProcessBreakOnTermination(processHandle, &breakOnTermination);
             NtClose(processHandle);
         }
 
-        if (breakOnTermination != 0)
+        if (breakOnTermination)
         {
             critical = TRUE;
             dangerous = TRUE;
@@ -933,7 +933,7 @@ static BOOLEAN PhpShowErrorProcess(
         return PhShowContinueStatus(
             hWnd,
             PhaFormatString(
-            L"Unable to %s %s (PID %u)",
+            L"Unable to %s %s (PID %lu)",
             Verb,
             Process->ProcessName->Buffer,
             HandleToUlong(Process->ProcessId)
@@ -1336,7 +1336,7 @@ BOOLEAN PhUiRestartProcess(
 
     if (!NT_SUCCESS(status = PhOpenProcess(
         &processHandle,
-        ProcessQueryAccess | PROCESS_VM_READ,
+        PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
         Process->ProcessId
         )))
         goto ErrorExit;
@@ -1577,7 +1577,7 @@ BOOLEAN PhUiSetVirtualizationProcess(
 
     if (NT_SUCCESS(status = PhOpenProcess(
         &processHandle,
-        ProcessQueryAccess,
+        PROCESS_QUERY_LIMITED_INFORMATION,
         Process->ProcessId
         )))
     {
@@ -1597,6 +1597,64 @@ BOOLEAN PhUiSetVirtualizationProcess(
     if (!NT_SUCCESS(status))
     {
         PhpShowErrorProcess(hWnd, L"set virtualization for", Process, status, 0);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+BOOLEAN PhUiSetCriticalProcess(
+    _In_ HWND WindowHandle,
+    _In_ PPH_PROCESS_ITEM Process
+    )
+{
+    NTSTATUS status;
+    HANDLE processHandle;
+    BOOLEAN breakOnTermination;
+
+    status = PhOpenProcess(
+        &processHandle,
+        PROCESS_QUERY_INFORMATION | PROCESS_SET_INFORMATION,
+        Process->ProcessId
+        );
+
+    if (NT_SUCCESS(status))
+    {
+        status = PhGetProcessBreakOnTermination(
+            processHandle,
+            &breakOnTermination
+            );
+
+        if (NT_SUCCESS(status))
+        {
+            if (!breakOnTermination && (!PhGetIntegerSetting(L"EnableWarnings") || PhShowConfirmMessage(
+                WindowHandle,
+                L"enable",
+                L"critical status on the process",
+                L"If the process ends, the operating system will shut down immediately.",
+                TRUE
+                )))
+            {
+                status = PhSetProcessBreakOnTermination(processHandle, TRUE);
+            }
+            else if (breakOnTermination && (!PhGetIntegerSetting(L"EnableWarnings") || PhShowConfirmMessage(
+                WindowHandle,
+                L"disable",
+                L"critical status on the process",
+                NULL,
+                FALSE
+                )))
+            {
+                status = PhSetProcessBreakOnTermination(processHandle, FALSE);
+            }
+        }
+
+        NtClose(processHandle);
+    }
+
+    if (!NT_SUCCESS(status))
+    {
+        PhpShowErrorProcess(WindowHandle, L"set critical status", Process, status, 0);
         return FALSE;
     }
 
@@ -1688,7 +1746,7 @@ BOOLEAN PhUiLoadDllProcess(
 
     if (NT_SUCCESS(status = PhOpenProcess(
         &processHandle,
-        ProcessQueryAccess | PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION |
+        PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION |
         PROCESS_VM_READ | PROCESS_VM_WRITE,
         Process->ProcessId
         )))
@@ -2326,7 +2384,7 @@ static BOOLEAN PhpShowErrorThread(
     return PhShowContinueStatus(
         hWnd,
         PhaFormatString(
-        L"Unable to %s thread %u",
+        L"Unable to %s thread %lu",
         Verb,
         HandleToUlong(Thread->ThreadId)
         )->Buffer,
@@ -2378,7 +2436,7 @@ BOOLEAN PhUiTerminateThreads(
 
             if (!cancelled && PhpShowErrorAndConnectToPhSvc(
                 hWnd,
-                PhaFormatString(L"Unable to terminate thread %u", HandleToUlong(Threads[i]->ThreadId))->Buffer,
+                PhaFormatString(L"Unable to terminate thread %lu", HandleToUlong(Threads[i]->ThreadId))->Buffer,
                 status,
                 &connected
                 ))
@@ -2441,7 +2499,7 @@ BOOLEAN PhUiSuspendThreads(
 
             if (!cancelled && PhpShowErrorAndConnectToPhSvc(
                 hWnd,
-                PhaFormatString(L"Unable to suspend thread %u", HandleToUlong(Threads[i]->ThreadId))->Buffer,
+                PhaFormatString(L"Unable to suspend thread %lu", HandleToUlong(Threads[i]->ThreadId))->Buffer,
                 status,
                 &connected
                 ))
@@ -2504,7 +2562,7 @@ BOOLEAN PhUiResumeThreads(
 
             if (!cancelled && PhpShowErrorAndConnectToPhSvc(
                 hWnd,
-                PhaFormatString(L"Unable to resume thread %u", HandleToUlong(Threads[i]->ThreadId))->Buffer,
+                PhaFormatString(L"Unable to resume thread %lu", HandleToUlong(Threads[i]->ThreadId))->Buffer,
                 status,
                 &connected
                 ))
@@ -2551,7 +2609,7 @@ BOOLEAN PhUiSetPriorityThread(
 
     if (NT_SUCCESS(status = PhOpenThread(
         &threadHandle,
-        ThreadSetAccess,
+        THREAD_SET_LIMITED_INFORMATION,
         Thread->ThreadId
         )))
     {
@@ -2597,7 +2655,7 @@ BOOLEAN PhUiSetIoPriorityThread(
         // The operation may have failed due to the lack of SeIncreaseBasePriorityPrivilege.
         if (PhpShowErrorAndConnectToPhSvc(
             hWnd,
-            PhaFormatString(L"Unable to set the I/O priority of thread %u", HandleToUlong(Thread->ThreadId))->Buffer,
+            PhaFormatString(L"Unable to set the I/O priority of thread %lu", HandleToUlong(Thread->ThreadId))->Buffer,
             status,
             &connected
             ))
@@ -2711,7 +2769,7 @@ BOOLEAN PhUiUnloadModule(
     case PH_MODULE_TYPE_WOW64_MODULE:
         if (NT_SUCCESS(status = PhOpenProcess(
             &processHandle,
-            ProcessQueryAccess | PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION |
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION |
             PROCESS_VM_READ | PROCESS_VM_WRITE,
             ProcessId
             )))
@@ -3021,20 +3079,15 @@ BOOLEAN PhUiCloseHandles(
 
         if (WindowsVersion >= WINDOWS_10)
         {
-            ULONG breakOnTermination;
+            BOOLEAN breakOnTermination;
             PROCESS_MITIGATION_POLICY_INFORMATION policyInfo;
 
-            breakOnTermination = 0;
-
-            if (NT_SUCCESS(NtQueryInformationProcess(
+            if (NT_SUCCESS(PhGetProcessBreakOnTermination(
                 processHandle,
-                ProcessBreakOnTermination,
-                &breakOnTermination,
-                sizeof(ULONG),
-                NULL
+                &breakOnTermination
                 )))
             {
-                if (breakOnTermination != 0)
+                if (breakOnTermination)
                 {
                     critical = TRUE;
                 }
@@ -3122,13 +3175,13 @@ BOOLEAN PhUiSetAttributesHandle(
 
     if (!KphIsConnected())
     {
-        PhShowError(hWnd, PH_KPH_ERROR_MESSAGE);
+        PhShowError2(hWnd, PH_KPH_ERROR_TITLE, PH_KPH_ERROR_MESSAGE);
         return FALSE;
     }
 
     if (NT_SUCCESS(status = PhOpenProcess(
         &processHandle,
-        ProcessQueryAccess,
+        PROCESS_QUERY_LIMITED_INFORMATION,
         ProcessId
         )))
     {

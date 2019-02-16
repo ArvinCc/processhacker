@@ -3,7 +3,7 @@
  *   process provider
  *
  * Copyright (C) 2009-2016 wj32
- * Copyright (C) 2017-2018 dmex
+ * Copyright (C) 2017-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -120,6 +120,7 @@ typedef struct _PH_PROCESS_QUERY_S2_DATA
     BOOLEAN IsPacked;
     ULONG ImportFunctions;
     ULONG ImportModules;
+    PH_IMAGE_VERSION_INFO VersionInfo; // LXSS only
 } PH_PROCESS_QUERY_S2_DATA, *PPH_PROCESS_QUERY_S2_DATA;
 
 typedef struct _PH_SID_FULL_NAME_CACHE_ENTRY
@@ -729,7 +730,7 @@ VOID PhpProcessQueryStage1(
         }
 
         // Version info.
-        PhInitializeImageVersionInfo(&Data->VersionInfo, processItem->FileName->Buffer);
+        PhInitializeImageVersionInfoCached(&Data->VersionInfo, processItem->FileName, FALSE);
     }
 
     // Debugged
@@ -760,7 +761,7 @@ VOID PhpProcessQueryStage1(
         {
             status = PhOpenProcess(
                 &processHandle,
-                ProcessQueryAccess | PROCESS_VM_READ,
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
                 processId
                 );
         }
@@ -937,6 +938,11 @@ VOID PhpProcessQueryStage2(
             Data->ImportFunctions = -1;
         }
     }
+
+    if (PhEnableProcessQueryStage2 && processItem->FileName && processItem->IsSubsystemProcess)
+    {
+        PhInitializeImageVersionInfoCached(&Data->VersionInfo, processItem->FileName, TRUE);
+    }
 }
 
 NTSTATUS PhpProcessQueryStage1Worker(
@@ -1050,6 +1056,12 @@ VOID PhpFillProcessItemStage2(
     processItem->IsPacked = Data->IsPacked;
     processItem->ImportFunctions = Data->ImportFunctions;
     processItem->ImportModules = Data->ImportModules;
+
+    // Note: We query Win32 processes in stage1 so don't overwrite the previous data. (dmex)
+    if (processItem->IsSubsystemProcess)
+    {
+        memcpy(&processItem->VersionInfo, &Data->VersionInfo, sizeof(PH_IMAGE_VERSION_INFO));
+    }
 }
 
 VOID PhpFillProcessItemExtension(
@@ -1084,14 +1096,10 @@ VOID PhpFillProcessItem(
 
     if (PH_IS_REAL_PROCESS_ID(ProcessItem->ProcessId))
     {
-        if (PhEnableHexId)
-            PhPrintUInt32Hex(ProcessItem->ProcessIdString, HandleToUlong(ProcessItem->ProcessId));
-        else
-            PhPrintUInt32(ProcessItem->ProcessIdString, HandleToUlong(ProcessItem->ProcessId));
+        PhPrintUInt32(ProcessItem->ProcessIdString, HandleToUlong(ProcessItem->ProcessId));
+        PhPrintUInt32(ProcessItem->ParentProcessIdString, HandleToUlong(ProcessItem->ParentProcessId));
+        PhPrintUInt32(ProcessItem->SessionIdString, ProcessItem->SessionId);
     }
-
-    PhPrintUInt32(ProcessItem->ParentProcessIdString, HandleToUlong(ProcessItem->ParentProcessId));
-    PhPrintUInt32(ProcessItem->SessionIdString, ProcessItem->SessionId);
 
     // Open a handle to the process for later usage.
     if (PH_IS_REAL_PROCESS_ID(ProcessItem->ProcessId))
@@ -1125,23 +1133,27 @@ VOID PhpFillProcessItem(
     // Process information
     {
         // If we're dealing with System (PID 4), we need to get the
-        // kernel file name. Otherwise, get the image file name.
+        // kernel file name. Otherwise, get the image file name. (wj32)
 
         if (ProcessItem->ProcessId != SYSTEM_PROCESS_ID)
         {
+            NTSTATUS status = STATUS_UNSUCCESSFUL;
             PPH_STRING fileName;
 
             if (ProcessItem->QueryHandle && !ProcessItem->IsSubsystemProcess)
             {
-                PhGetProcessImageFileNameWin32(ProcessItem->QueryHandle, &ProcessItem->FileName);
+                status = PhGetProcessImageFileNameWin32(ProcessItem->QueryHandle, &fileName);
             }
-            else
+
+            if (!NT_SUCCESS(status))
             {
-                if (NT_SUCCESS(PhGetProcessImageFileNameByProcessId(ProcessItem->ProcessId, &fileName)))
-                {
-                    ProcessItem->FileName = PhGetFileName(fileName);
-                    PhDereferenceObject(fileName);
-                }
+                status = PhGetProcessImageFileNameByProcessId(ProcessItem->ProcessId, &fileName);
+            }
+
+            if (NT_SUCCESS(status))
+            {
+                ProcessItem->FileName = PhGetFileName(fileName);
+                PhDereferenceObject(fileName);
             }
         }
         else
@@ -1159,7 +1171,10 @@ VOID PhpFillProcessItem(
     }
 
     // Token information
-    if (ProcessItem->QueryHandle)
+    if (
+        ProcessItem->QueryHandle &&
+        ProcessItem->ProcessId != SYSTEM_PROCESS_ID // System token can't be opened (dmex)
+        )
     {
         HANDLE tokenHandle;
 
@@ -1201,7 +1216,7 @@ VOID PhpFillProcessItem(
     else
     {
         if (ProcessItem->ProcessId == SYSTEM_IDLE_PROCESS_ID ||
-            ProcessItem->ProcessId == SYSTEM_PROCESS_ID) // System token can't be opened on XP
+            ProcessItem->ProcessId == SYSTEM_PROCESS_ID) // System token can't be opened on XP (wj32)
         {
             ProcessItem->Sid = PhAllocateCopy(&PhSeLocalSystemSid, RtlLengthSid(&PhSeLocalSystemSid));
         }
@@ -1229,7 +1244,7 @@ VOID PhpFillProcessItem(
         }
         else
         {
-            // HACK: 'emulate' the PS_PROTECTION info for older OSes.
+            // HACK: 'emulate' the PS_PROTECTION info for older OSes. (ge0rdi)
             if (ProcessItem->IsProtectedProcess)
                 ProcessItem->Protection.Type = PsProtectedTypeProtected;
         }
@@ -1237,7 +1252,7 @@ VOID PhpFillProcessItem(
     else
     {
         // Signalize that we weren't able to get protection info with a special value.
-        // Note: We use this value to determine if we should show protection information.
+        // Note: We use this value to determine if we should show protection information. (ge0rdi)
         ProcessItem->Protection.Level = UCHAR_MAX;
     }
 
@@ -1253,7 +1268,7 @@ VOID PhpFillProcessItem(
     }
 
     // On Windows 8.1 and above, processes without threads are reflected processes 
-    // which will not terminate if we have a handle open.
+    // which will not terminate if we have a handle open. (wj32)
     if (Process->NumberOfThreads == 0 && ProcessItem->QueryHandle)
     {
         NtClose(ProcessItem->QueryHandle);
@@ -1750,6 +1765,8 @@ VOID PhProcessProviderUpdate(
     {
         if (PhEnablePurgeProcessRecords)
             PhPurgeProcessRecords();
+
+        PhFlushImageVersionInfoCache();
     }
 
     if (!PhProcessStatisticsInitialized)
@@ -2172,6 +2189,122 @@ VOID PhProcessProviderUpdate(
                 }
             }
 
+            // Token information
+            if (
+                processItem->QueryHandle &&
+                processItem->ProcessId != SYSTEM_PROCESS_ID // System token can't be opened (dmex)
+                )
+            {
+                HANDLE tokenHandle;
+
+                if (NT_SUCCESS(PhOpenProcessToken(
+                    processItem->QueryHandle,
+                    TOKEN_QUERY,
+                    &tokenHandle
+                    )))
+                {
+                    PTOKEN_USER tokenUser;
+                    TOKEN_ELEVATION_TYPE elevationType;
+                    MANDATORY_LEVEL integrityLevel;
+                    PWSTR integrityString;
+
+                    // User
+                    if (NT_SUCCESS(PhGetTokenUser(tokenHandle, &tokenUser)))
+                    {
+                        PSID processSid = processItem->Sid;
+
+                        processItem->Sid = PhAllocateCopy(tokenUser->User.Sid, RtlLengthSid(tokenUser->User.Sid));
+
+                        PhFree(processSid);
+                        PhFree(tokenUser);
+                        modified = TRUE;
+                    }
+
+                    // Elevation
+                    if (NT_SUCCESS(PhGetTokenElevationType(tokenHandle, &elevationType)))
+                    {
+                        if (processItem->ElevationType != elevationType)
+                        {
+                            processItem->ElevationType = elevationType;
+                            processItem->IsElevated = elevationType == TokenElevationTypeFull;
+                            modified = TRUE;
+                        }
+                    }
+
+                    // Integrity
+                    if (NT_SUCCESS(PhGetTokenIntegrityLevel(tokenHandle, &integrityLevel, &integrityString)))
+                    {
+                        if (processItem->IntegrityLevel != integrityLevel)
+                        {
+                            processItem->IntegrityLevel = integrityLevel;
+                            processItem->IntegrityString = integrityString;
+                            modified = TRUE;
+                        }
+                    }
+
+                    NtClose(tokenHandle);
+                }
+            }
+
+            // Job
+            if (processItem->QueryHandle)
+            {
+                NTSTATUS status;
+
+                if (KphIsConnected())
+                {
+                    HANDLE jobHandle = NULL;
+
+                    status = KphOpenProcessJob(
+                        processItem->QueryHandle,
+                        JOB_OBJECT_QUERY,
+                        &jobHandle
+                        );
+
+                    if (NT_SUCCESS(status) && status != STATUS_PROCESS_NOT_IN_JOB)
+                    {
+                        JOBOBJECT_BASIC_LIMIT_INFORMATION basicLimits;
+                        PPH_STRING jobName = NULL;
+
+                        processItem->IsInJob = TRUE;
+
+                        PhGetHandleInformation(
+                            NtCurrentProcess(),
+                            jobHandle,
+                            ULONG_MAX,
+                            NULL,
+                            NULL,
+                            NULL,
+                            &jobName
+                            );
+
+                        if (jobName)
+                            PhMoveReference(&processItem->JobName, jobName);
+
+                        // Process Explorer only recognizes processes as being in jobs if they don't have
+                        // the silent-breakaway-OK limit as their only limit. Emulate this behaviour. (wj32)
+                        if (NT_SUCCESS(PhGetJobBasicLimits(jobHandle, &basicLimits)))
+                        {
+                            processItem->IsInSignificantJob =
+                                basicLimits.LimitFlags != JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+                        }
+                    }
+
+                    if (jobHandle)
+                        NtClose(jobHandle);
+                }
+                else
+                {
+                    // KProcessHacker is not available. We can determine if the process is in a job, but we
+                    // can't get a handle to the job. (wj32)
+
+                    status = NtIsProcessInJob(processItem->QueryHandle, NULL);
+
+                    if (NT_SUCCESS(status))
+                        processItem->IsInJob = status == STATUS_PROCESS_IN_JOB;
+                }
+            }
+
             // Debugged
             if (processItem->QueryHandle)
             {
@@ -2200,10 +2333,16 @@ VOID PhProcessProviderUpdate(
             if (processItem->UpdateIsDotNet)
             {
                 BOOLEAN isDotNet;
+                ULONG flags = 0;
 
-                if (NT_SUCCESS(PhGetProcessIsDotNet(processItem->ProcessId, &isDotNet)))
+                if (NT_SUCCESS(PhGetProcessIsDotNetEx(processItem->ProcessId, NULL, 0, &isDotNet, &flags)))
                 {
                     processItem->IsDotNet = isDotNet;
+
+                    // This check is needed for the DotNetTools plugin. (dmex)
+                    if (!isDotNet && (flags & PH_CLR_JIT_PRESENT))
+                        processItem->IsDotNet = TRUE;
+
                     modified = TRUE;
                 }
 

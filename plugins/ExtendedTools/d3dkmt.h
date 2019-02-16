@@ -413,10 +413,11 @@ typedef enum D3DKMT_DRIVERVERSION
     KMT_DRIVERVERSION_WDDM_1_2 = 1200, // The display miniport driver supports the Windows Vista display driver model with released Windows 8 features. Supported starting with Windows 8.
     KMT_DRIVERVERSION_WDDM_1_3 = 1300, // The display miniport driver supports the Windows display driver model with released Windows 8.1 features. Supported starting with Windows 8.1.
     KMT_DRIVERVERSION_WDDM_2_0 = 2000, // The display miniport driver supports the Windows display driver model with released Windows 10 features. Supported starting with Windows 10.
-    KMT_DRIVERVERSION_WDDM_2_1 = 2100,
-    KMT_DRIVERVERSION_WDDM_2_2 = 2200,
-    KMT_DRIVERVERSION_WDDM_2_3 = 2300,
-    KMT_DRIVERVERSION_WDDM_2_4 = 2400,
+    KMT_DRIVERVERSION_WDDM_2_1 = 2100, // 1607
+    KMT_DRIVERVERSION_WDDM_2_2 = 2200, // 1703
+    KMT_DRIVERVERSION_WDDM_2_3 = 2300, // 1709
+    KMT_DRIVERVERSION_WDDM_2_4 = 2400, // 1803
+    KMT_DRIVERVERSION_WDDM_2_5 = 2500, // 1809
 } D3DKMT_DRIVERVERSION;
 
 // Specifies the type of display device that the graphics adapter supports.
@@ -788,6 +789,7 @@ typedef enum _D3DDDI_QUERYREGISTRY_TYPE
     D3DDDI_QUERYREGISTRY_SERVICEKEY = 0, // HKLM\System\CurrentControlSet\Services\nvlddmkm
     D3DDDI_QUERYREGISTRY_ADAPTERKEY = 1, // HKLM\System\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000
     D3DDDI_QUERYREGISTRY_DRIVERSTOREPATH = 2,
+    D3DDDI_QUERYREGISTRY_DRIVERIMAGEPATH = 3, // REDSTONE5
     D3DDDI_QUERYREGISTRY_MAX,
 } D3DDDI_QUERYREGISTRY_TYPE;
 
@@ -848,6 +850,7 @@ typedef struct _D3DKMT_NODE_PERFDATA
     _Out_ ULONG Voltage; // Voltage of the engine in milli volts mV
     _Out_ ULONG VoltageMax; // The max voltage of the engine in milli volts while not overclocked.
     _Out_ ULONG VoltageMaxOC; // The max voltage of the engine while overclocked in milli volts.
+    _Out_ ULONGLONG MaxTransitionLatency; // Max transition latency to change the frequency in 100 nanoseconds // REDSTONE5
 } D3DKMT_NODE_PERFDATA;
 
 // Represents performance data collected per adapter on an interval basis.

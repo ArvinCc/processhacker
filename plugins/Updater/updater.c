@@ -2,7 +2,7 @@
  * Process Hacker Plugins -
  *   Update Checker Plugin
  *
- * Copyright (C) 2011-2017 dmex
+ * Copyright (C) 2011-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -25,6 +25,33 @@
 HWND UpdateDialogHandle = NULL;
 HANDLE UpdateDialogThreadHandle = NULL;
 PH_EVENT InitializedEvent = PH_EVENT_INIT;
+PPH_OBJECT_TYPE UpdateContextType = NULL;
+PH_INITONCE UpdateContextTypeInitOnce = PH_INITONCE_INIT;
+
+VOID UpdateContextDeleteProcedure(
+    _In_ PVOID Object,
+    _In_ ULONG Flags
+    )
+{
+    PPH_UPDATER_CONTEXT context = Object;
+
+    if (context->CurrentVersionString)
+        PhDereferenceObject(context->CurrentVersionString);
+    if (context->Version)
+        PhDereferenceObject(context->Version);
+    if (context->RelDate)
+        PhDereferenceObject(context->RelDate);
+    if (context->SetupFileDownloadUrl)
+        PhDereferenceObject(context->SetupFileDownloadUrl);
+    if (context->SetupFileLength)
+        PhDereferenceObject(context->SetupFileLength);
+    if (context->SetupFileHash)
+        PhDereferenceObject(context->SetupFileHash);
+    if (context->SetupFileSignature)
+        PhDereferenceObject(context->SetupFileSignature);
+    if (context->BuildMessage)
+        PhDereferenceObject(context->BuildMessage);
+}
 
 PPH_UPDATER_CONTEXT CreateUpdateContext(
     _In_ BOOLEAN StartupCheck
@@ -32,30 +59,19 @@ PPH_UPDATER_CONTEXT CreateUpdateContext(
 {
     PPH_UPDATER_CONTEXT context;
 
-    context = (PPH_UPDATER_CONTEXT)PhCreateAlloc(sizeof(PH_UPDATER_CONTEXT));
+    if (PhBeginInitOnce(&UpdateContextTypeInitOnce))
+    {
+        UpdateContextType = PhCreateObjectType(L"UpdaterContextObjectType", 0, UpdateContextDeleteProcedure);
+        PhEndInitOnce(&UpdateContextTypeInitOnce);
+    }
+
+    context = PhCreateObject(sizeof(PH_UPDATER_CONTEXT), UpdateContextType);
     memset(context, 0, sizeof(PH_UPDATER_CONTEXT));
 
     context->CurrentVersionString = PhGetPhVersion();
     context->StartupCheck = StartupCheck;
 
     return context;
-}
-
-VOID FreeUpdateContext(
-    _In_ _Post_invalid_ PPH_UPDATER_CONTEXT Context
-    )
-{
-    PhClearReference(&Context->CurrentVersionString);
-
-    PhClearReference(&Context->Version);
-    PhClearReference(&Context->RelDate);
-    PhClearReference(&Context->SetupFileDownloadUrl);
-    PhClearReference(&Context->SetupFileLength);
-    PhClearReference(&Context->SetupFileHash);
-    PhClearReference(&Context->SetupFileSignature);
-    PhClearReference(&Context->BuildMessage);
-
-    PhDereferenceObject(Context);
 }
 
 VOID TaskDialogCreateIcons(
@@ -127,20 +143,25 @@ BOOLEAN LastUpdateCheckExpired(
     VOID
     )
 {
-    ULONG64 lastUpdateTimeTicks = 0;
+    ULONG64 lastUpdateTimeTicks;
     LARGE_INTEGER currentUpdateTimeTicks;
     PPH_STRING lastUpdateTimeString;
 
     PhQuerySystemTime(&currentUpdateTimeTicks);
 
     lastUpdateTimeString = PhGetStringSetting(SETTING_NAME_LAST_CHECK);
-    PhStringToInteger64(&lastUpdateTimeString->sr, 0, &lastUpdateTimeTicks);
+
+    if (PhIsNullOrEmptyString(lastUpdateTimeString))
+        return TRUE;
+
+    if (!PhStringToInteger64(&lastUpdateTimeString->sr, 0, &lastUpdateTimeTicks))
+        return TRUE;
 
     if (currentUpdateTimeTicks.QuadPart - lastUpdateTimeTicks >= 7 * PH_TICKS_PER_DAY)
     {
         PPH_STRING currentUpdateTimeString;
         
-        currentUpdateTimeString = PhFormatUInt64(currentUpdateTimeTicks.QuadPart, FALSE);
+        currentUpdateTimeString = PhIntegerToString64(currentUpdateTimeTicks.QuadPart, 0, FALSE);
         PhSetStringSetting2(SETTING_NAME_LAST_CHECK, &currentUpdateTimeString->sr);
 
         PhDereferenceObject(currentUpdateTimeString);
@@ -317,7 +338,11 @@ BOOLEAN QueryUpdateData(
     Context->BuildMessage = PhGetJsonValueAsString(jsonObject, "changelog");
 
     Context->CurrentVersion = ParseVersionString(Context->CurrentVersionString);
+#ifdef FORCE_LATEST_VERSION
+    Context->LatestVersion = ParseVersionString(Context->CurrentVersionString);
+#else
     Context->LatestVersion = ParseVersionString(Context->Version);
+#endif
 
     PhFreeJsonParser(jsonObject);
 
@@ -402,7 +427,7 @@ NTSTATUS UpdateCheckSilentThread(
 CleanupExit:
 
     if (!context->HaveData)
-        FreeUpdateContext(context);
+        PhDereferenceObject(context);
 
     return STATUS_SUCCESS;
 }
@@ -427,7 +452,7 @@ NTSTATUS UpdateCheckThread(
 
     if (!context->HaveData)
     {
-        ShowUpdateFailedDialog(context, FALSE, FALSE);
+        PostMessage(context->DialogHandle, PH_SHOWERROR, FALSE, FALSE);
 
         PhDereferenceObject(context);
         PhDeleteAutoPool(&autoPool);
@@ -437,17 +462,17 @@ NTSTATUS UpdateCheckThread(
     if (context->CurrentVersion == context->LatestVersion)
     {
         // User is running the latest version
-        ShowLatestVersionDialog(context);
+        PostMessage(context->DialogHandle, PH_SHOWLATEST, 0, 0);
     }
     else if (context->CurrentVersion > context->LatestVersion)
     {
         // User is running a newer version
-        ShowNewerVersionDialog(context);
+        PostMessage(context->DialogHandle, PH_SHOWNEWEST, 0, 0);
     }
     else
     {
         // User is running an older version
-        ShowAvailableDialog(context);
+        PostMessage(context->DialogHandle, PH_SHOWUPDATE, 0, 0);
     }
 
     PhDereferenceObject(context);
@@ -478,6 +503,7 @@ NTSTATUS UpdateDownloadThread(
     _In_ PVOID Parameter
     )
 {
+    PPH_UPDATER_CONTEXT context = (PPH_UPDATER_CONTEXT)Parameter;
     BOOLEAN downloadSuccess = FALSE;
     BOOLEAN hashSuccess = FALSE;
     BOOLEAN signatureSuccess = FALSE;
@@ -491,7 +517,6 @@ NTSTATUS UpdateDownloadThread(
     LARGE_INTEGER timeStart;
     ULONG64 timeTicks = 0;
     ULONG64 timeBitsPerSecond = 0;
-    PPH_UPDATER_CONTEXT context = (PPH_UPDATER_CONTEXT)Parameter;
 
     SendMessage(context->DialogHandle, TDM_UPDATE_ELEMENT_TEXT, TDE_MAIN_INSTRUCTION, (LPARAM)L"Initializing download request...");
 
@@ -650,9 +675,9 @@ NTSTATUS UpdateDownloadThread(
             // TODO: Update on timer callback.
             {
                 FLOAT percent = ((FLOAT)downloadedBytes / contentLength * 100);
-                PPH_STRING totalLength = PhFormatSize(contentLength, -1);
-                PPH_STRING totalDownloaded = PhFormatSize(downloadedBytes, -1);
-                PPH_STRING totalSpeed = PhFormatSize(timeBitsPerSecond, -1);
+                PPH_STRING totalLength = PhFormatSize(contentLength, ULONG_MAX);
+                PPH_STRING totalDownloaded = PhFormatSize(downloadedBytes, ULONG_MAX);
+                PPH_STRING totalSpeed = PhFormatSize(timeBitsPerSecond, ULONG_MAX);
 
                 PPH_STRING statusMessage = PhFormatString(
                     L"Downloaded: %s of %s (%.0f%%)\r\nSpeed: %s/s",
@@ -709,20 +734,20 @@ CleanupExit:
     {
         if (downloadSuccess && hashSuccess && signatureSuccess)
         {
-            ShowUpdateInstallDialog(context);
+            PostMessage(context->DialogHandle, PH_SHOWINSTALL, 0, 0);
         }
         else if (downloadSuccess)
         {
             if (signatureSuccess)
-                ShowUpdateFailedDialog(context, TRUE, FALSE);
+                PostMessage(context->DialogHandle, PH_SHOWERROR, TRUE, FALSE);
             else if (hashSuccess)
-                ShowUpdateFailedDialog(context, FALSE, TRUE);
+                PostMessage(context->DialogHandle, PH_SHOWERROR, FALSE, TRUE);
             else
-                ShowUpdateFailedDialog(context, FALSE, FALSE);
+                PostMessage(context->DialogHandle, PH_SHOWERROR, FALSE, FALSE);
         }
         else
         {
-            ShowUpdateFailedDialog(context, FALSE, FALSE);
+            PostMessage(context->DialogHandle, PH_SHOWERROR, FALSE, FALSE);
         }
     }
 
@@ -751,6 +776,8 @@ LRESULT CALLBACK TaskDialogSubclassProc(
         {
             SetWindowLongPtr(hwndDlg, GWLP_WNDPROC, (LONG_PTR)oldWndProc);
             PhRemoveWindowContext(hwndDlg, UCHAR_MAX);
+
+            PhUnregisterWindowCallback(hwndDlg);
         }
         break;
     case PH_SHOWDIALOG:
@@ -761,6 +788,31 @@ LRESULT CALLBACK TaskDialogSubclassProc(
                 ShowWindow(hwndDlg, SW_SHOW);
 
             SetForegroundWindow(hwndDlg);
+        }
+        break;
+    case PH_SHOWLATEST:
+        {
+            ShowLatestVersionDialog(context);
+        }
+        break;
+    case PH_SHOWNEWEST:
+        {
+            ShowNewerVersionDialog(context);
+        }
+        break;
+    case PH_SHOWUPDATE:
+        {
+            ShowAvailableDialog(context);
+        }
+        break;
+    case PH_SHOWINSTALL:
+        {
+            ShowUpdateInstallDialog(context);
+        }
+        break;
+    case PH_SHOWERROR:
+        {
+            ShowUpdateFailedDialog(context, (BOOLEAN)wParam, (BOOLEAN)lParam);
         }
         break;
     //case WM_PARENTNOTIFY:
@@ -830,6 +882,8 @@ HRESULT CALLBACK TaskDialogBootstrapCallback(
             // Create the Taskdialog icons.
             TaskDialogCreateIcons(context);
 
+            PhRegisterWindowCallback(hwndDlg, PH_PLUGIN_WINDOW_EVENT_TYPE_TOPMOST, NULL);
+
             // Subclass the Taskdialog.
             context->DefaultWindowProc = (WNDPROC)GetWindowLongPtr(hwndDlg, GWLP_WNDPROC);
             PhSetWindowContext(hwndDlg, UCHAR_MAX, context);
@@ -869,7 +923,7 @@ NTSTATUS ShowUpdateDialogThread(
     config.pfCallback = TaskDialogBootstrapCallback;
     TaskDialogIndirect(&config, NULL, NULL, NULL);
 
-    FreeUpdateContext(context);
+    PhDereferenceObject(context);
     PhDeleteAutoPool(&autoPool);
 
     if (UpdateDialogThreadHandle)
@@ -905,5 +959,5 @@ VOID StartInitialCheck(
     VOID
     )
 {
-    PhCreateThread2(UpdateCheckSilentThread, NULL);
+    PhQueueItemWorkQueue(PhGetGlobalWorkQueue(), UpdateCheckSilentThread, NULL);
 }

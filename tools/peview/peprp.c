@@ -47,7 +47,7 @@ PIMAGE_COR20_HEADER PvImageCor20Header = NULL;
 PPH_SYMBOL_PROVIDER PvSymbolProvider = NULL;
 HICON PvImageSmallIcon = NULL;
 HICON PvImageLargeIcon = NULL;
-static PH_IMAGE_VERSION_INFO PvImageVersionInfo;
+PH_IMAGE_VERSION_INFO PvImageVersionInfo;
 static VERIFY_RESULT PvImageVerifyResult;
 static PPH_STRING PvImageSignerName;
 
@@ -69,12 +69,25 @@ VOID PvPeProperties(
     {
         // Load current PE pdb
         // TODO: Move into seperate thread.
-        PhLoadModuleSymbolProvider(
-            PvSymbolProvider,
-            PvFileName->Buffer,
-            (ULONG64)PvMappedImage.NtHeaders->OptionalHeader.ImageBase,
-            PvMappedImage.NtHeaders->OptionalHeader.SizeOfImage
-            );
+
+        if (PvMappedImage.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
+        {
+            PhLoadModuleSymbolProvider(
+                PvSymbolProvider,
+                PvFileName->Buffer,
+                (ULONG64)PvMappedImage.NtHeaders32->OptionalHeader.ImageBase,
+                PvMappedImage.NtHeaders32->OptionalHeader.SizeOfImage
+                );
+        }
+        else
+        {
+            PhLoadModuleSymbolProvider(
+                PvSymbolProvider,
+                PvFileName->Buffer,
+                (ULONG64)PvMappedImage.NtHeaders->OptionalHeader.ImageBase,
+                PvMappedImage.NtHeaders->OptionalHeader.SizeOfImage
+                );
+        }
     }
 
     if (propContext = PvCreatePropContext(PvFileName))
@@ -173,6 +186,67 @@ VOID PvPeProperties(
             newPage = PvCreatePropPageContext(
                 MAKEINTRESOURCE(IDD_PECFG),
                 PvpPeCgfDlgProc,
+                NULL
+                );
+            PvAddPropPage(propContext, newPage);
+        }
+
+        // Properties page
+        {
+            newPage = PvCreatePropPageContext(
+                MAKEINTRESOURCE(IDD_PEPROPSTORAGE),
+                PvpPePropStoreDlgProc,
+                NULL
+                );
+            PvAddPropPage(propContext, newPage);
+        }
+
+        // Extended attributes page
+        {
+            newPage = PvCreatePropPageContext(
+                MAKEINTRESOURCE(IDD_PEATTR),
+                PvpPeExtendedAttributesDlgProc,
+                NULL
+                );
+            PvAddPropPage(propContext, newPage);
+        }
+
+        // Streams page
+        {
+            newPage = PvCreatePropPageContext(
+                MAKEINTRESOURCE(IDD_PESTREAMS),
+                PvpPeStreamsDlgProc,
+                NULL
+                );
+            PvAddPropPage(propContext, newPage);
+        }
+
+        // Links page
+        {
+            newPage = PvCreatePropPageContext(
+                MAKEINTRESOURCE(IDD_PELINKS),
+                PvpPeLinksDlgProc,
+                NULL
+                );
+            PvAddPropPage(propContext, newPage);
+        }
+
+        // Processes page
+        {
+            newPage = PvCreatePropPageContext(
+                MAKEINTRESOURCE(IDD_PIDS),
+                PvpPeProcessesDlgProc,
+                NULL
+                );
+            PvAddPropPage(propContext, newPage);
+        }
+
+        // TLS page
+        if (NT_SUCCESS(PhGetMappedImageDataEntry(&PvMappedImage, IMAGE_DIRECTORY_ENTRY_TLS, &entry)) && entry->VirtualAddress)
+        {
+            newPage = PvCreatePropPageContext(
+                MAKEINTRESOURCE(IDD_TLS),
+                PvpPeTlsDlgProc,
                 NULL
                 );
             PvAddPropPage(propContext, newPage);
@@ -301,16 +375,6 @@ static NTSTATUS VerifyImageThreadStart(
     return STATUS_SUCCESS;
 }
 
-FORCEINLINE PWSTR PvpGetStringOrNa(
-    _In_ PPH_STRING String
-    )
-{
-    if (!PhIsNullOrEmptyString(String))
-        return String->Buffer;
-    else
-        return L"N/A";
-}
-
 FORCEINLINE PPH_STRING PvpGetSectionCharacteristics(
     _In_ ULONG Characteristics
     )
@@ -391,6 +455,10 @@ VOID PvpSetPeImageVersionInfo(
     PhDereferenceObject(string);
 }
 
+#ifndef IMAGE_FILE_MACHINE_CHPE_X86
+#define IMAGE_FILE_MACHINE_CHPE_X86 0x3A64 // defined in ntimage.h
+#endif
+
 VOID PvpSetPeImageMachineType(
     _In_ HWND WindowHandle
     )
@@ -410,6 +478,12 @@ VOID PvpSetPeImageMachineType(
         break;
     case IMAGE_FILE_MACHINE_ARMNT:
         type = L"ARM Thumb-2";
+        break;
+    case IMAGE_FILE_MACHINE_ARM64:
+        type = L"ARM64";
+        break;
+    case IMAGE_FILE_MACHINE_CHPE_X86:
+        type = L"Hybrid PE";
         break;
     default:
         type = L"Unknown";
@@ -778,6 +852,11 @@ INT_PTR CALLBACK PvpPeGeneralDlgProc(
             }
 
             PvHandleListViewNotifyForCopy(lParam, GetDlgItem(hwndDlg, IDC_LIST));
+        }
+        break;
+    case WM_CONTEXTMENU:
+        {
+            PvHandleListViewCommandCopy(hwndDlg, lParam, wParam, GetDlgItem(hwndDlg, IDC_LIST));
         }
         break;
     }

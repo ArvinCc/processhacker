@@ -261,9 +261,12 @@ VOID DestroyThreadStackNode(
     _In_ PPH_STACK_TREE_ROOT_NODE Node
     )
 {
-    PhClearReference(&Node->TooltipText);
-    PhClearReference(&Node->IndexString);
-    PhClearReference(&Node->SymbolString);
+    if (Node->TooltipText)
+        PhDereferenceObject(Node->TooltipText);
+    if (Node->IndexString)
+        PhDereferenceObject(Node->IndexString);
+    if (Node->SymbolString)
+        PhDereferenceObject(Node->SymbolString);
 
     PhDereferenceObject(Node);
 }
@@ -528,7 +531,7 @@ BOOLEAN NTAPI ThreadStackTreeNewCallback(
                 {
                     PhAppendFormatStringBuilder(
                         &stringBuilder,
-                        L"File: %s: line %u\n",
+                        L"File: %s: line %lu\n",
                         fileName->Buffer,
                         lineInfo.LineNumber
                         );
@@ -703,7 +706,7 @@ VOID PhShowThreadStackDialog(
     // but KProcessHacker is not loaded, show an error message.
     if (ProcessId == SYSTEM_PROCESS_ID && !KphIsConnected())
     {
-        PhShowError(ParentWindowHandle, PH_KPH_ERROR_MESSAGE);
+        PhShowError2(ParentWindowHandle, PH_KPH_ERROR_TITLE, PH_KPH_ERROR_MESSAGE);
         return;
     }
 
@@ -717,7 +720,7 @@ VOID PhShowThreadStackDialog(
         {
             status = PhOpenThread(
                 &threadHandle,
-                ThreadQueryAccess,
+                THREAD_QUERY_LIMITED_INFORMATION,
                 ThreadId
                 );
         }
@@ -791,7 +794,7 @@ INT_PTR CALLBACK PhpThreadStackDlgProc(
             SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)PH_LOAD_SHARED_ICON_SMALL(PhInstanceHandle, MAKEINTRESOURCE(IDI_PROCESSHACKER)));
             SendMessage(hwndDlg, WM_SETICON, ICON_BIG, (LPARAM)PH_LOAD_SHARED_ICON_LARGE(PhInstanceHandle, MAKEINTRESOURCE(IDI_PROCESSHACKER)));
 
-            SetWindowText(hwndDlg, PhaFormatString(L"Stack - thread %u", HandleToUlong(context->ThreadId))->Buffer);
+            PhSetWindowText(hwndDlg, PhaFormatString(L"Stack - thread %lu", HandleToUlong(context->ThreadId))->Buffer);
 
             InitializeThreadStackTree(context);
 
@@ -848,6 +851,13 @@ INT_PTR CALLBACK PhpThreadStackDlgProc(
     case WM_DESTROY:
         {
             context->StopWalk = TRUE;
+
+            // HACK HACK HACK
+            // PhWalkThreadStack will suspend the thread before walking the stack and download symbols but
+            // we don't wait for the stack walk / symbol downloading to complete when the user closes the progress dialog
+            // and so the thread can remain suspended for a long time (in some cases)... For now just resume the thread
+            // when closing the dialog since those results will be discarded and PhWalkThreadStack will cleanup whenever it completes. (dmex)
+            NtResumeThread(context->ThreadHandle, NULL);
 
             DeleteThreadStackTree(context);
 
@@ -1141,10 +1151,13 @@ VOID PhpSymbolProviderEventCallbackHandler(
     case CBA_SYMBOLS_UNLOADED:
         {
             PIMAGEHLP_DEFERRED_SYMBOL_LOADW64 callbackData = (PIMAGEHLP_DEFERRED_SYMBOL_LOADW64)event->EventData;
-            PPH_STRING fileName;
+            PPH_STRING fileName = NULL;
 
-            fileName = PhCreateString(callbackData->FileName);
-            PhMoveReference(&fileName, PhGetBaseName(fileName));
+            if (callbackData->FileName[0] != UNICODE_NULL)
+            {
+                fileName = PhCreateString(callbackData->FileName);
+                PhMoveReference(&fileName, PhGetBaseName(fileName));
+            }
 
             switch (event->ActionCode)
             {
@@ -1161,6 +1174,9 @@ VOID PhpSymbolProviderEventCallbackHandler(
                 statusMessage = PhFormatString(L"Unloading %s...", PhGetStringOrEmpty(fileName));
                 break;
             }
+
+            if (fileName)
+                PhDereferenceObject(fileName);
         }
         break;
     case CBA_READ_MEMORY:
@@ -1314,7 +1330,7 @@ BOOLEAN PhpShowThreadStackWindow(
     config.pszContent = L" ";
     config.cxWidth = 200;
 
-    return SUCCEEDED(TaskDialogIndirect(&config, &result, NULL, NULL)) && result == IDOK;
+    return SUCCEEDED(TaskDialogIndirect(&config, &result, NULL, NULL)) && result != IDCANCEL;
 }
 
 static NTSTATUS PhpRefreshThreadStack(
@@ -1327,9 +1343,9 @@ static NTSTATUS PhpRefreshThreadStack(
     Context->StopWalk = FALSE;
     PhMoveReference(&Context->StatusMessage, PhCreateString(L"Processing stack frames..."));
 
-    if (PhpShowThreadStackWindow(Context))
+    if (!PhpShowThreadStackWindow(Context))
     {
-
+        return STATUS_ABANDONED;
     }
 
     if (!Context->StopWalk && NT_SUCCESS(Context->WalkStatus))

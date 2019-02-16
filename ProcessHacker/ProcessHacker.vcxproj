@@ -22,7 +22,7 @@
     <ProjectGuid>{0271DD27-6707-4290-8DFE-285702B7115D}</ProjectGuid>
     <RootNamespace>ProcessHacker</RootNamespace>
     <Keyword>Win32Proj</Keyword>
-    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
@@ -340,7 +340,6 @@
     <ClCompile Include="sessprp.c" />
     <ClCompile Include="sessshad.c" />
     <ClCompile Include="settings.c" />
-    <ClCompile Include="splitter.c" />
     <ClCompile Include="srvcr.c" />
     <ClCompile Include="srvctl.c" />
     <ClCompile Include="srvlist.c" />
@@ -384,7 +383,6 @@
     <ClInclude Include="include\procprv.h" />
     <ClInclude Include="include\proctree.h" />
     <ClInclude Include="include\phsettings.h" />
-    <ClInclude Include="include\splitter.h" />
     <ClInclude Include="include\srvlist.h" />
     <ClInclude Include="include\srvprv.h" />
     <ClInclude Include="include\sysinfo.h" />
@@ -423,7 +421,6 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ProcessHacker.rc" />
-    <ResourceCompile Include="version.rc" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="ProcessHacker.manifest">

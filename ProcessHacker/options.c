@@ -271,7 +271,7 @@ INT_PTR CALLBACK PhOptionsDialogProc(
             SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)PH_LOAD_SHARED_ICON_SMALL(PhInstanceHandle, MAKEINTRESOURCE(IDI_PROCESSHACKER)));
             SendMessage(hwndDlg, WM_SETICON, ICON_BIG, (LPARAM)PH_LOAD_SHARED_ICON_LARGE(PhInstanceHandle, MAKEINTRESOURCE(IDI_PROCESSHACKER)));
 
-            OptionsTreeImageList = ImageList_Create(2, 22, ILC_COLOR, 1, 1);
+            OptionsTreeImageList = ImageList_Create(2, PH_SCALE_DPI(22), ILC_COLOR, 1, 1);
             OptionsTreeControl = GetDlgItem(hwndDlg, IDC_SECTIONTREE);
             ContainerControl = GetDlgItem(hwndDlg, IDD_CONTAINER);
 
@@ -291,7 +291,10 @@ INT_PTR CALLBACK PhOptionsDialogProc(
             //PhAddLayoutItem(&WindowLayoutManager, GetDlgItem(hwndDlg, IDC_APPLY), NULL, PH_ANCHOR_RIGHT | PH_ANCHOR_BOTTOM);
             PhAddLayoutItem(&WindowLayoutManager, GetDlgItem(hwndDlg, IDOK), NULL, PH_ANCHOR_RIGHT | PH_ANCHOR_BOTTOM);
 
-            PhInitializeWindowTheme(hwndDlg, PhEnableThemeSupport);
+            PhRegisterWindowCallback(hwndDlg, PH_PLUGIN_WINDOW_EVENT_TYPE_TOPMOST, NULL);
+
+            if (PhEnableThemeSupport) // TODO: fix options dialog theme (dmex)
+                PhInitializeWindowTheme(hwndDlg, TRUE);
 
             {
                 PPH_OPTIONS_SECTION section;
@@ -345,6 +348,8 @@ INT_PTR CALLBACK PhOptionsDialogProc(
             SectionList = NULL;
 
             if (OptionsTreeImageList) ImageList_Destroy(OptionsTreeImageList);
+
+            PhUnregisterWindowCallback(hwndDlg);
 
             PhUnregisterDialog(PhOptionsWindowHandle);
             PhOptionsWindowHandle = NULL;
@@ -962,7 +967,7 @@ VOID PhpRefreshTaskManagerState(
 {
     if (!PhGetOwnTokenAttributes().Elevated)
     {
-        SendMessage(GetDlgItem(WindowHandle, IDC_REPLACETASKMANAGER), BCM_SETSHIELD, 0, TRUE);
+        Button_SetElevationRequiredState(GetDlgItem(WindowHandle, IDC_REPLACETASKMANAGER), TRUE);
     }
 
     if (PhpIsDefaultTaskManager())
@@ -999,7 +1004,6 @@ typedef enum _PHP_OPTIONS_INDEX
     PHP_OPTIONS_INDEX_ICON_SINGLE_CLICK,
     PHP_OPTIONS_INDEX_ICON_TOGGLE_VISIBILITY,
     PHP_OPTIONS_INDEX_PROPAGATE_CPU_USAGE,
-    PHP_OPTIONS_INDEX_SHOW_HEX_ID,
     PHP_OPTIONS_INDEX_SHOW_ADVANCED_OPTIONS
 } PHP_OPTIONS_GENERAL_INDEX;
 
@@ -1037,7 +1041,6 @@ static VOID PhpAdvancedPageLoad(
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ICON_SINGLE_CLICK, L"Single-click tray icons", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ICON_TOGGLE_VISIBILITY, L"Icon click toggles visibility", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_PROPAGATE_CPU_USAGE, L"Include usage of collapsed processes", NULL);
-    PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_SHOW_HEX_ID, L"Show hexadecimal IDs (experimental)", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_SHOW_ADVANCED_OPTIONS, L"Show advanced options (experimental)", NULL);
 
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_SINGLE_INSTANCE, L"AllowOnlyOneInstance");
@@ -1059,7 +1062,6 @@ static VOID PhpAdvancedPageLoad(
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ICON_SINGLE_CLICK, L"IconSingleClick");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ICON_TOGGLE_VISIBILITY, L"IconTogglesVisibility");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_PROPAGATE_CPU_USAGE, L"PropagateCpuUsage");
-    SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_SHOW_HEX_ID, L"ShowHexId");
 
     if (CurrentUserRunPresent)
         ListView_SetCheckState(listViewHandle, PHP_OPTIONS_INDEX_START_ATLOGON, TRUE);
@@ -1080,7 +1082,7 @@ static VOID PhpOptionsNotifyChangeCallback(
     if (RestartRequired)
     {
         if (PhShowMessage2(
-            PhMainWndHandle,
+            (IsWindowVisible(PhMainWndHandle) && !IsMinimized(PhMainWndHandle)) ? PhMainWndHandle : NULL,
             TDCBF_YES_BUTTON | TDCBF_NO_BUTTON,
             TD_INFORMATION_ICON,
             L"One or more options you have changed requires a restart of Process Hacker.",
@@ -1151,7 +1153,6 @@ static VOID PhpAdvancedPageSave(
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_ICON_SINGLE_CLICK, L"IconSingleClick");
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_ICON_TOGGLE_VISIBILITY, L"IconTogglesVisibility");
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_PROPAGATE_CPU_USAGE, L"PropagateCpuUsage");
-    SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_SHOW_HEX_ID, L"ShowHexId");
 
     WriteCurrentUserRun(
         ListView_GetCheckState(listViewHandle, PHP_OPTIONS_INDEX_START_ATLOGON) == BST_CHECKED,
@@ -1213,6 +1214,7 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
     )
 {
     static PH_LAYOUT_MANAGER LayoutManager;
+    static BOOLEAN GeneralListViewStateInitializing = FALSE;
 
     switch (uMsg)
     {
@@ -1225,7 +1227,7 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
 
             comboBoxHandle = GetDlgItem(hwndDlg, IDC_MAXSIZEUNIT);
             listviewHandle = GetDlgItem(hwndDlg, IDC_SETTINGS);
-            GeneralListviewImageList = ImageList_Create(1, 22, ILC_COLOR, 1, 1);
+            GeneralListviewImageList = ImageList_Create(1, PH_SCALE_DPI(22), ILC_COLOR, 1, 1);
 
             PhInitializeLayoutManager(&LayoutManager, hwndDlg);
             PhAddLayoutItem(&LayoutManager, GetDlgItem(hwndDlg, IDC_SEARCHENGINE), NULL, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
@@ -1268,8 +1270,10 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
                 }
             }
 
+            GeneralListViewStateInitializing = TRUE;
             PhpAdvancedPageLoad(hwndDlg);
             PhpRefreshTaskManagerState(hwndDlg);
+            GeneralListViewStateInitializing = FALSE;
         }
         break;
     case WM_DESTROY:
@@ -1342,7 +1346,7 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
 
                     PhCreateThread2(PhpElevateAdvancedThreadStart, PhFormatString(
                         L"-showoptions -hwnd %Ix",
-                        (ULONG_PTR)GetParent(GetParent(hwndDlg))
+                        (ULONG_PTR)PhOptionsWindowHandle // GetParent(GetParent(hwndDlg))
                         ));
                 }
                 break;
@@ -1388,6 +1392,43 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
                             // Emulate the checkbox control label click behavior and check/uncheck the checkbox when the listview item is clicked.
                             itemChecked = ListView_GetCheckState(GetDlgItem(hwndDlg, IDC_SETTINGS), itemActivate->iItem) == BST_CHECKED;
                             ListView_SetCheckState(GetDlgItem(hwndDlg, IDC_SETTINGS), itemActivate->iItem, !itemChecked);
+                        }
+                    }
+                }
+                break;
+            case LVN_ITEMCHANGING:
+                {
+                    LPNM_LISTVIEW listView = (LPNM_LISTVIEW)lParam;
+
+                    if (listView->uChanged & LVIF_STATE)
+                    {
+                        if (GeneralListViewStateInitializing)
+                            break;
+
+                        switch (listView->uNewState & LVIS_STATEIMAGEMASK)
+                        {
+                        case INDEXTOSTATEIMAGEMASK(1): // unchecked
+                            {
+                                switch (listView->iItem)
+                                {
+                                case PHP_OPTIONS_INDEX_ENABLE_DRIVER:
+                                    {
+                                        if (PhShowMessage2(
+                                            PhOptionsWindowHandle,
+                                            TDCBF_YES_BUTTON | TDCBF_NO_BUTTON,
+                                            TD_WARNING_ICON,
+                                            L"Are you sure you want to disable the kernel-mode driver?",
+                                            L"You will be unable to use more advanced features, view details about system processes or terminate malicious software."
+                                            ) == IDNO)
+                                        {
+                                            SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
+                                            return TRUE;
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            break;
                         }
                     }
                 }
@@ -1505,7 +1546,7 @@ static INT_PTR CALLBACK PhpOptionsAdvancedEditDlgProc(
             SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)PH_LOAD_SHARED_ICON_SMALL(PhInstanceHandle, MAKEINTRESOURCE(IDI_PROCESSHACKER)));
             SendMessage(hwndDlg, WM_SETICON, ICON_BIG, (LPARAM)PH_LOAD_SHARED_ICON_LARGE(PhInstanceHandle, MAKEINTRESOURCE(IDI_PROCESSHACKER)));
 
-            SetWindowText(hwndDlg, L"Setting Editor");
+            PhSetWindowText(hwndDlg, L"Setting Editor");
             PhCenterWindow(hwndDlg, GetParent(hwndDlg));
 
             PhSetWindowContext(hwndDlg, PH_WINDOW_CONTEXT_DEFAULT, setting);

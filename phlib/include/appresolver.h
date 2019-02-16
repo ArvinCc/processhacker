@@ -32,6 +32,11 @@ BOOLEAN PhAppResolverGetAppIdForProcess(
     _Out_ PPH_STRING *ApplicationUserModelId
     );
 
+BOOLEAN PhAppResolverGetAppIdForWindow(
+    _In_ HWND WindowHandle,
+    _Out_ PPH_STRING *ApplicationUserModelId
+    );
+
 HRESULT PhAppResolverActivateAppId(
     _In_ PPH_STRING AppUserModelId,
     _In_opt_ PWSTR CommandLine,
@@ -52,6 +57,11 @@ PPH_STRING PhGetAppContainerPackageName(
 
 PPH_STRING PhGetProcessPackageFullName(
     _In_ HANDLE ProcessHandle
+    );
+
+BOOLEAN PhIsPackageCapabilitySid(
+    _In_ PSID AppContainerSid,
+    _In_ PSID Sid
     );
 
 PPH_STRING PhGetPackagePath(

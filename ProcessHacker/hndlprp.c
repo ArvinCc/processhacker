@@ -3,7 +3,7 @@
  *   handle properties
  *
  * Copyright (C) 2010-2013 wj32
- * Copyright (C) 2018 dmex
+ * Copyright (C) 2018-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -22,14 +22,15 @@
  */
 
 #include <phapp.h>
+#include <hndlprv.h>
+#include <phplug.h>
+#include <phsettings.h>
+
+#include <emenu.h>
 #include <settings.h>
 #include <kphuser.h>
 #include <hndlinfo.h>
 #include <secedit.h>
-
-#include <hndlprv.h>
-#include <phplug.h>
-#include <phsettings.h>
 
 typedef enum _PHP_HANDLE_GENERAL_CATEGORY
 {
@@ -359,7 +360,11 @@ VOID PhpUpdateHandleGeneralListViewGroups(
         NULL
         );
 
-    if (PhEqualString2(Context->HandleItem->TypeName, L"ALPC Port", TRUE))
+    if (PhIsNullOrEmptyString(Context->HandleItem->TypeName))
+    {
+        NOTHING;
+    }
+    else if (PhEqualString2(Context->HandleItem->TypeName, L"ALPC Port", TRUE))
     {
         PhAddListViewGroup(Context->ListViewHandle, PH_HANDLE_GENERAL_CATEGORY_ALPC, L"ALPC Port");
         Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_SEQUENCENUMBER] = PhAddListViewGroupItem(
@@ -582,9 +587,12 @@ VOID PhpUpdateHandleGeneral(
         NtClose(processHandle);
     }
 
-    if (PhEqualString2(Context->HandleItem->TypeName, L"ALPC Port", TRUE))
+    if (PhIsNullOrEmptyString(Context->HandleItem->TypeName))
     {
-        PHANDLE_PROPERTIES_CONTEXT context = Context;
+        NOTHING;
+    }
+    else if (PhEqualString2(Context->HandleItem->TypeName, L"ALPC Port", TRUE))
+    {
         NTSTATUS status;
         HANDLE processHandle;
         HANDLE alpcPortHandle;
@@ -637,7 +645,6 @@ VOID PhpUpdateHandleGeneral(
     }
     else if (PhEqualStringRef2(&Context->HandleItem->TypeName->sr, L"File", TRUE))
     {
-        PHANDLE_PROPERTIES_CONTEXT context = Context;
         NTSTATUS status;
         HANDLE processHandle;
         HANDLE fileHandle;
@@ -740,6 +747,7 @@ VOID PhpUpdateHandleGeneral(
                     FileModeAccessEntries,
                     RTL_NUMBER_OF(FileModeAccessEntries)
                     );
+
                 PhInitFormatS(&format[0], L"0x");
                 PhInitFormatX(&format[1], fileModeInfo.Mode);
                 PhInitFormatS(&format[2], L" (");
@@ -797,7 +805,7 @@ VOID PhpUpdateHandleGeneral(
 
                         PhInitFormatI64UGroupDigits(&format[0], filePositionInfo.CurrentByteOffset.QuadPart);
                         PhInitFormatS(&format[1], L" (");
-                        PhInitFormatF(&format[2], (DOUBLE)(filePositionInfo.CurrentByteOffset.QuadPart / fileStandardInfo.EndOfFile.QuadPart * 100), 1);
+                        PhInitFormatF(&format[2], (DOUBLE)filePositionInfo.CurrentByteOffset.QuadPart / (DOUBLE)fileStandardInfo.EndOfFile.QuadPart * 100.0, 1);
                         PhInitFormatS(&format[3], L"%)");
 
                         if (PhFormatToBuffer(format, RTL_NUMBER_OF(format), filePositionString, sizeof(filePositionString), NULL))
@@ -825,7 +833,6 @@ VOID PhpUpdateHandleGeneral(
     }
     else if (PhEqualStringRef2(&Context->HandleItem->TypeName->sr, L"Section", TRUE))
     {
-        PHANDLE_PROPERTIES_CONTEXT context = Context;
         NTSTATUS status;
         HANDLE processHandle;
         HANDLE sectionHandle;
@@ -902,7 +909,6 @@ VOID PhpUpdateHandleGeneral(
     }
     else if (PhEqualString2(Context->HandleItem->TypeName, L"Mutant", TRUE))
     {
-        PHANDLE_PROPERTIES_CONTEXT context = Context;
         NTSTATUS status;
         HANDLE processHandle;
         HANDLE mutantHandle;
@@ -953,7 +959,6 @@ VOID PhpUpdateHandleGeneral(
     }
     else if (PhEqualString2(Context->HandleItem->TypeName, L"Process", TRUE))
     {
-        PHANDLE_PROPERTIES_CONTEXT context = Context;
         NTSTATUS status;
         HANDLE processHandle;
         HANDLE dupHandle;
@@ -969,23 +974,10 @@ VOID PhpUpdateHandleGeneral(
                 Context->HandleItem->Handle,
                 NtCurrentProcess(),
                 &dupHandle,
-                ProcessQueryAccess,
+                PROCESS_QUERY_LIMITED_INFORMATION,
                 0,
                 0
                 );
-
-            if (!NT_SUCCESS(status))
-            {
-                status = NtDuplicateObject(
-                    processHandle,
-                    Context->HandleItem->Handle,
-                    NtCurrentProcess(),
-                    &dupHandle,
-                    PROCESS_QUERY_LIMITED_INFORMATION,
-                    0,
-                    0
-                    );
-            }
 
             NtClose(processHandle);
         }
@@ -1102,6 +1094,8 @@ INT_PTR CALLBACK PhpHandleGeneralDlgProc(
             PhpUpdateHandleGeneralListViewGroups(context);
             PhpUpdateHandleGeneral(context);
 
+            PhRegisterWindowCallback(GetParent(hwndDlg), PH_PLUGIN_WINDOW_EVENT_TYPE_TOPMOST, NULL);
+
             if (PhEnableThemeSupport) // TODO: Required for compat (dmex)
                 PhInitializeWindowTheme(GetParent(hwndDlg), PhEnableThemeSupport);
             else
@@ -1110,6 +1104,8 @@ INT_PTR CALLBACK PhpHandleGeneralDlgProc(
         break;
     case WM_DESTROY:
         {
+            PhUnregisterWindowCallback(GetParent(hwndDlg));
+
             PhSaveWindowPlacementToSetting(L"HandlePropertiesWindowPosition", NULL, GetParent(hwndDlg)); // HACK
 
             PhDeleteLayoutManager(&context->LayoutManager);
@@ -1127,6 +1123,8 @@ INT_PTR CALLBACK PhpHandleGeneralDlgProc(
         {
             LPNMHDR header = (LPNMHDR)lParam;
 
+            PhHandleListViewNotifyBehaviors(lParam, context->ListViewHandle, PH_LIST_VIEW_DEFAULT_1_BEHAVIORS);
+
             switch (header->code)
             {
             case PSN_QUERYINITIALFOCUS:
@@ -1134,6 +1132,69 @@ INT_PTR CALLBACK PhpHandleGeneralDlgProc(
                     SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (LONG_PTR)GetDlgItem(hwndDlg, IDC_BASICINFORMATION));
                 }
                 return TRUE;
+            }
+        }
+        break;
+    case WM_CONTEXTMENU:
+        {
+            if ((HWND)wParam == context->ListViewHandle)
+            {
+                POINT point;
+                PPH_EMENU menu;
+                PPH_EMENU item;
+                PVOID *listviewItems;
+                ULONG numberOfItems;
+
+                point.x = GET_X_LPARAM(lParam);
+                point.y = GET_Y_LPARAM(lParam);
+
+                if (point.x == -1 && point.y == -1)
+                    PhGetListViewContextMenuPoint((HWND)wParam, &point);
+
+                PhGetSelectedListViewItemParams(context->ListViewHandle, &listviewItems, &numberOfItems);
+
+                if (numberOfItems != 0)
+                {
+                    menu = PhCreateEMenu();
+
+                    PhInsertEMenuItem(menu, PhCreateEMenuItem(0, IDC_COPY, L"&Copy", NULL, NULL), ULONG_MAX);
+                    PhInsertCopyListViewEMenuItem(menu, IDC_COPY, context->ListViewHandle);
+
+                    item = PhShowEMenu(
+                        menu,
+                        hwndDlg,
+                        PH_EMENU_SHOW_SEND_COMMAND | PH_EMENU_SHOW_LEFTRIGHT,
+                        PH_ALIGN_LEFT | PH_ALIGN_TOP,
+                        point.x,
+                        point.y
+                        );
+
+                    if (item)
+                    {
+                        BOOLEAN handled = FALSE;
+
+                        handled = PhHandleCopyListViewEMenuItem(item);
+
+                        //if (!handled && PhPluginsEnabled)
+                        //    handled = PhPluginTriggerEMenuItem(&menuInfo, item);
+
+                        if (!handled)
+                        {
+                            switch (item->Id)
+                            {
+                            case IDC_COPY:
+                                {
+                                    PhCopyListView(context->ListViewHandle);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    PhDestroyEMenu(menu);
+                }
+
+                PhFree(listviewItems);
             }
         }
         break;

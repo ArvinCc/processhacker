@@ -3,7 +3,7 @@
  *   object search
  *
  * Copyright (C) 2010-2016 wj32
- * Copyright (C) 2017-2018 dmex
+ * Copyright (C) 2017-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -130,8 +130,8 @@ typedef struct _PH_HANDLE_OBJECT_TREE_ROOT_NODE
     PH_STRINGREF TextCache[PH_OBJECT_SEARCH_TREE_COLUMN_MAXIMUM];
 } PH_HANDLE_OBJECT_TREE_ROOT_NODE, *PPH_HANDLE_OBJECT_TREE_ROOT_NODE;
 
-#define SORT_FUNCTION(Column) HandleObjectTreeNewCompare##Column
-#define BEGIN_SORT_FUNCTION(Column) static int __cdecl HandleObjectTreeNewCompare##Column( \
+#define SORT_FUNCTION(Column) PhpHandleObjectTreeNewCompare##Column
+#define BEGIN_SORT_FUNCTION(Column) static int __cdecl PhpHandleObjectTreeNewCompare##Column( \
     _In_ void *_context, \
     _In_ const void *_elem1, \
     _In_ const void *_elem2 \
@@ -184,7 +184,7 @@ BEGIN_SORT_FUNCTION(OriginalName)
 }
 END_SORT_FUNCTION
 
-VOID HandleObjectLoadSettingsTreeList(
+VOID PhpHandleObjectLoadSettingsTreeList(
     _Inout_ PPH_HANDLE_SEARCH_CONTEXT Context
     )
 {
@@ -195,7 +195,7 @@ VOID HandleObjectLoadSettingsTreeList(
     PhDereferenceObject(settings);
 }
 
-VOID HandleObjectSaveSettingsTreeList(
+VOID PhpHandleObjectSaveSettingsTreeList(
     _Inout_ PPH_HANDLE_SEARCH_CONTEXT Context
     )
 {
@@ -206,7 +206,7 @@ VOID HandleObjectSaveSettingsTreeList(
     PhDereferenceObject(settings);
 }
 
-BOOLEAN HandleObjectNodeHashtableEqualFunction(
+BOOLEAN PhpHandleObjectNodeHashtableEqualFunction(
     _In_ PVOID Entry1,
     _In_ PVOID Entry2
     )
@@ -217,14 +217,14 @@ BOOLEAN HandleObjectNodeHashtableEqualFunction(
     return node1->HandleObject == node2->HandleObject;
 }
 
-ULONG HandleObjectNodeHashtableHashFunction(
+ULONG PhpHandleObjectNodeHashtableHashFunction(
     _In_ PVOID Entry
     )
 {
     return PhHashIntPtr((ULONG_PTR)(*(PPH_HANDLE_OBJECT_TREE_ROOT_NODE*)Entry)->Handle);
 }
 
-VOID DestroyHandleObjectNode(
+VOID PhpDestroyHandleObjectNode(
     _In_ PPH_HANDLE_OBJECT_TREE_ROOT_NODE Node
     )
 {
@@ -236,7 +236,7 @@ VOID DestroyHandleObjectNode(
     PhDereferenceObject(Node);
 }
 
-PPH_HANDLE_OBJECT_TREE_ROOT_NODE AddHandleObjectNode(
+PPH_HANDLE_OBJECT_TREE_ROOT_NODE PhpAddHandleObjectNode(
     _Inout_ PPH_HANDLE_SEARCH_CONTEXT Context,
     _In_ HANDLE Handle
     )
@@ -263,7 +263,7 @@ PPH_HANDLE_OBJECT_TREE_ROOT_NODE AddHandleObjectNode(
     return handleObjectNode;
 }
 
-PPH_HANDLE_OBJECT_TREE_ROOT_NODE FindHandleObjectNode(
+PPH_HANDLE_OBJECT_TREE_ROOT_NODE PhpFindHandleObjectNode(
     _In_ PPH_HANDLE_SEARCH_CONTEXT Context,
     _In_ HANDLE Handle
     )
@@ -285,7 +285,7 @@ PPH_HANDLE_OBJECT_TREE_ROOT_NODE FindHandleObjectNode(
         return NULL;
 }
 
-VOID RemoveHandleObjectNode(
+VOID PhpRemoveHandleObjectNode(
     _In_ PPH_HANDLE_SEARCH_CONTEXT Context,
     _In_ PPH_HANDLE_OBJECT_TREE_ROOT_NODE Node
     )
@@ -299,11 +299,11 @@ VOID RemoveHandleObjectNode(
         PhRemoveItemList(Context->NodeList, index);
     }
 
-    DestroyHandleObjectNode(Node);
+    PhpDestroyHandleObjectNode(Node);
     TreeNew_NodesStructured(Context->TreeNewHandle);
 }
 
-VOID UpdateHandleObjectNode(
+VOID PhpUpdateHandleObjectNode(
     _In_ PPH_HANDLE_SEARCH_CONTEXT Context,
     _In_ PPH_HANDLE_OBJECT_TREE_ROOT_NODE Node
     )
@@ -314,7 +314,7 @@ VOID UpdateHandleObjectNode(
     TreeNew_NodesStructured(Context->TreeNewHandle);
 }
 
-BOOLEAN NTAPI HandleObjectTreeNewCallback(
+BOOLEAN NTAPI PhpHandleObjectTreeNewCallback(
     _In_ HWND hwnd,
     _In_ PH_TREENEW_MESSAGE Message,
     _In_opt_ PVOID Parameter1,
@@ -473,12 +473,12 @@ BOOLEAN NTAPI HandleObjectTreeNewCallback(
     return FALSE;
 }
 
-VOID ClearHandleObjectTree(
+VOID PhpClearHandleObjectTree(
     _In_ PPH_HANDLE_SEARCH_CONTEXT Context
     )
 {
     for (ULONG i = 0; i < Context->NodeList->Count; i++)
-        DestroyHandleObjectNode(Context->NodeList->Items[i]);
+        PhpDestroyHandleObjectNode(Context->NodeList->Items[i]);
 
     PhClearHashtable(Context->NodeHashtable);
     PhClearList(Context->NodeList);
@@ -486,7 +486,7 @@ VOID ClearHandleObjectTree(
     TreeNew_NodesStructured(Context->TreeNewHandle);
 }
 
-PPH_HANDLE_OBJECT_TREE_ROOT_NODE GetSelectedHandleObjectNode(
+PPH_HANDLE_OBJECT_TREE_ROOT_NODE PhpGetSelectedHandleObjectNode(
     _In_ PPH_HANDLE_SEARCH_CONTEXT Context
     )
 {
@@ -503,7 +503,7 @@ PPH_HANDLE_OBJECT_TREE_ROOT_NODE GetSelectedHandleObjectNode(
     return NULL;
 }
 
-VOID GetSelectedHandleObjectNodes(
+VOID PhpGetSelectedHandleObjectNodes(
     _In_ PPH_HANDLE_SEARCH_CONTEXT Context,
     _Out_ PPH_HANDLE_OBJECT_TREE_ROOT_NODE **HandleObjectNodes,
     _Out_ PULONG NumberOfHandleObjectNodes
@@ -529,21 +529,21 @@ VOID GetSelectedHandleObjectNodes(
     PhDereferenceObject(list);
 }
 
-VOID InitializeHandleObjectTree(
+VOID PhpInitializeHandleObjectTree(
     _Inout_ PPH_HANDLE_SEARCH_CONTEXT Context
     )
 {
     Context->NodeList = PhCreateList(100);
     Context->NodeHashtable = PhCreateHashtable(
         sizeof(PPH_HANDLE_OBJECT_TREE_ROOT_NODE),
-        HandleObjectNodeHashtableEqualFunction,
-        HandleObjectNodeHashtableHashFunction,
+        PhpHandleObjectNodeHashtableEqualFunction,
+        PhpHandleObjectNodeHashtableHashFunction,
         100
         );
 
     PhSetControlTheme(Context->TreeNewHandle, L"explorer");
 
-    TreeNew_SetCallback(Context->TreeNewHandle, HandleObjectTreeNewCallback, Context);
+    TreeNew_SetCallback(Context->TreeNewHandle, PhpHandleObjectTreeNewCallback, Context);
 
     // Default columns
     PhAddTreeNewColumn(Context->TreeNewHandle, PH_OBJECT_SEARCH_TREE_COLUMN_PROCESS, TRUE, L"Process", 100, PH_ALIGN_LEFT, 0, 0);
@@ -556,18 +556,18 @@ VOID InitializeHandleObjectTree(
 
     TreeNew_SetTriState(Context->TreeNewHandle, TRUE);
 
-    HandleObjectLoadSettingsTreeList(Context);
+    PhpHandleObjectLoadSettingsTreeList(Context);
 }
 
-VOID DeleteHandleObjectTree(
+VOID PhpDeleteHandleObjectTree(
     _In_ PPH_HANDLE_SEARCH_CONTEXT Context
     )
 {
-    HandleObjectSaveSettingsTreeList(Context);
+    PhpHandleObjectSaveSettingsTreeList(Context);
 
     for (ULONG i = 0; i < Context->NodeList->Count; i++)
     {
-        DestroyHandleObjectNode(Context->NodeList->Items[i]);
+        PhpDestroyHandleObjectNode(Context->NodeList->Items[i]);
     }
 
     PhDereferenceObject(Context->NodeHashtable);
@@ -710,7 +710,7 @@ VOID PhpFindObjectAddResultEntries(
 
         processItem = PhReferenceProcessItem(clientId.UniqueProcess);
 
-        objectNode = AddHandleObjectNode(Context, searchResult->Handle);
+        objectNode = PhpAddHandleObjectNode(Context, searchResult->Handle);
         objectNode->ProcessId = searchResult->ProcessId;
         objectNode->ResultType = searchResult->ResultType;
         objectNode->ClientIdName = PhGetClientIdNameEx(&clientId, processItem ? processItem->ProcessName : NULL);
@@ -741,7 +741,7 @@ VOID PhpFindObjectClearResultEntries(
     _In_ PPH_HANDLE_SEARCH_CONTEXT Context
     )
 {
-    ClearHandleObjectTree(Context);
+    PhpClearHandleObjectTree(Context);
 
     Context->SearchResultsAddIndex = 0;
 
@@ -848,9 +848,7 @@ static NTSTATUS NTAPI SearchHandleFunction(
         {
             PPHP_OBJECT_SEARCH_RESULT searchResult;
 
-            searchResult = PhAllocate(sizeof(PHP_OBJECT_SEARCH_RESULT));
-            memset(searchResult, 0, sizeof(PHP_OBJECT_SEARCH_RESULT));
-
+            searchResult = PhAllocateZero(sizeof(PHP_OBJECT_SEARCH_RESULT));
             searchResult->ProcessId = (HANDLE)handleContext->HandleInfo->UniqueProcessId;
             searchResult->ResultType = HandleSearchResult;
             searchResult->Object = handleContext->HandleInfo->Object;
@@ -981,10 +979,10 @@ NTSTATUS PhpFindObjectsThreadStart(
 
             if (PhBeginInitOnce(&initOnce))
             {
-                UNICODE_STRING fileTypeName;
+                UNICODE_STRING fileTypeName = RTL_CONSTANT_STRING(L"File");
 
-                RtlInitUnicodeString(&fileTypeName, L"File");
                 fileObjectTypeIndex = PhGetObjectTypeNumber(&fileTypeName);
+
                 PhEndInitOnce(&initOnce);
             }
         }
@@ -1045,6 +1043,7 @@ NTSTATUS PhpFindObjectsThreadStart(
             else
             {
                 SEARCH_HANDLE_CONTEXT searchHandleContext;
+
                 searchHandleContext.WindowContext = context;
                 searchHandleContext.NeedToFree = FALSE;
                 searchHandleContext.HandleInfo = handleInfo;
@@ -1152,7 +1151,7 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
             PhRegisterDialog(hwndDlg);
             PhCreateSearchControl(hwndDlg, context->SearchWindowHandle, L"Find Handles or DLLs");
             PhpPopulateObjectTypes(context->TypeWindowHandle);
-            InitializeHandleObjectTree(context);
+            PhpInitializeHandleObjectTree(context);
 
             PhInitializeLayoutManager(&context->LayoutManager, hwndDlg);
             PhAddLayoutItem(&context->LayoutManager, context->TypeWindowHandle, NULL, PH_ANCHOR_LEFT | PH_ANCHOR_TOP);
@@ -1167,8 +1166,12 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
             context->MinimumSize.bottom = 100;
             MapDialogRect(hwndDlg, &context->MinimumSize);
 
-            PhCenterWindow(hwndDlg, PhMainWndHandle);
-            PhLoadWindowPlacementFromSetting(L"FindObjWindowPosition", L"FindObjWindowSize", hwndDlg);
+            if (PhGetIntegerPairSetting(L"FindObjWindowPosition").X)
+                PhLoadWindowPlacementFromSetting(L"FindObjWindowPosition", L"FindObjWindowSize", hwndDlg);
+            else
+                PhCenterWindow(hwndDlg, PhMainWndHandle);
+
+            PhRegisterWindowCallback(hwndDlg, PH_PLUGIN_WINDOW_EVENT_TYPE_TOPMOST, NULL);
 
             context->SearchResults = PhCreateList(128);
             context->SearchResultsAddIndex = 0;
@@ -1233,9 +1236,11 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
             PhSetIntegerSetting(L"FindObjRegex", Button_GetCheck(GetDlgItem(hwndDlg, IDC_REGEX)) == BST_CHECKED);
             PhSaveWindowPlacementToSetting(L"FindObjWindowPosition", L"FindObjWindowSize", hwndDlg);
 
+            PhUnregisterWindowCallback(hwndDlg);
+
             PhDeleteLayoutManager(&context->LayoutManager);
 
-            DeleteHandleObjectTree(context);
+            PhpDeleteHandleObjectTree(context);
 
             if (context->SearchResults)
             {
@@ -1328,7 +1333,7 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
 
                             if (!context->SearchRegexCompiledExpression)
                             {
-                                PhShowError(hwndDlg, L"Unable to compile the regular expression: \"%s\" at position %zu.",
+                                PhShowError2(hwndDlg, L"Unable to compile the regular expression.", L"\"%s\" at position %zu.",
                                     PhGetStringOrDefault(PH_AUTO(PhPcre2GetErrorMessage(errorCode)), L"Unknown error"),
                                     errorOffset
                                     );
@@ -1374,7 +1379,7 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
                     PPH_HANDLE_OBJECT_TREE_ROOT_NODE *handleObjectNodes = NULL;
                     ULONG numberOfHandleObjectNodes = 0;
 
-                    GetSelectedHandleObjectNodes(context, &handleObjectNodes, &numberOfHandleObjectNodes);
+                    PhpGetSelectedHandleObjectNodes(context, &handleObjectNodes, &numberOfHandleObjectNodes);
 
                     if (numberOfHandleObjectNodes != 0)
                     {
@@ -1402,6 +1407,8 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
 
                         PhDestroyEMenu(menu);
                     }
+
+                    PhFree(handleObjectNodes);
                 }
                 break;
             case ID_OBJECT_CLOSE:
@@ -1409,7 +1416,7 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
                     PPH_HANDLE_OBJECT_TREE_ROOT_NODE *handleObjectNodes = NULL;
                     ULONG numberOfHandleObjectNodes = 0;
 
-                    GetSelectedHandleObjectNodes(context, &handleObjectNodes, &numberOfHandleObjectNodes);
+                    PhpGetSelectedHandleObjectNodes(context, &handleObjectNodes, &numberOfHandleObjectNodes);
 
                     if (numberOfHandleObjectNodes != 0 && PhShowConfirmMessage(
                         hwndDlg,
@@ -1443,7 +1450,7 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
                                     DUPLICATE_CLOSE_SOURCE
                                     )))
                                 {
-                                    RemoveHandleObjectNode(context, handleObjectNodes[i]);
+                                    PhpRemoveHandleObjectNode(context, handleObjectNodes[i]);
                                 }
                     
                                 NtClose(processHandle);
@@ -1460,6 +1467,8 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
                             }
                         }
                     }
+
+                    PhFree(handleObjectNodes);
                 }
                 break;
             case ID_HANDLE_OBJECTPROPERTIES1:
@@ -1467,7 +1476,7 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
                 {
                     PPH_HANDLE_OBJECT_TREE_ROOT_NODE handleObjectNode;
 
-                    if (handleObjectNode = GetSelectedHandleObjectNode(context))
+                    if (handleObjectNode = PhpGetSelectedHandleObjectNode(context))
                     {
                         PH_HANDLE_ITEM_INFO info;
 
@@ -1487,7 +1496,7 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
                 {
                     PPH_HANDLE_OBJECT_TREE_ROOT_NODE handleObjectNode;
 
-                    if (handleObjectNode = GetSelectedHandleObjectNode(context))
+                    if (handleObjectNode = PhpGetSelectedHandleObjectNode(context))
                     {
                         PPH_PROCESS_NODE processNode;
 
@@ -1504,7 +1513,7 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
                 {
                     PPH_HANDLE_OBJECT_TREE_ROOT_NODE handleObjectNode;
 
-                    if (handleObjectNode = GetSelectedHandleObjectNode(context))
+                    if (handleObjectNode = PhpGetSelectedHandleObjectNode(context))
                     {
                         if (handleObjectNode->ResultType == HandleSearchResult)
                         {

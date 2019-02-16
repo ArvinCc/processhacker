@@ -93,8 +93,10 @@
 #define PHPRTLC_JOBOBJECTID 80
 #define PHPRTLC_PROTECTION 81
 #define PHPRTLC_DESKTOP 82
+#define PHPRTLC_CRITICAL 83
+#define PHPRTLC_PIDHEX 84
 
-#define PHPRTLC_MAXIMUM 83
+#define PHPRTLC_MAXIMUM 85
 #define PHPRTLC_IOGROUP_COUNT 9
 
 #define PHPN_WSCOUNTERS 0x1
@@ -111,6 +113,7 @@
 #define PHPN_FILEATTRIBUTES 0x800
 #define PHPN_DESKTOPINFO 0x1000
 #define PHPN_USERNAME 0x2000
+#define PHPN_CRITICAL 0x4000
 
 // begin_phapppub
 typedef struct _PH_PROCESS_NODE
@@ -172,6 +175,8 @@ typedef struct _PH_PROCESS_NODE
     // File attributes
     LARGE_INTEGER FileLastWriteTime;
     LARGE_INTEGER FileEndOfFile;
+    // Critical
+    BOOLEAN BreakOnTerminationEnabled;
 
     PPH_STRING TooltipText;
     ULONG64 TooltipTextValidToTickCount;
@@ -224,6 +229,7 @@ typedef struct _PH_PROCESS_NODE
     PPH_STRING ProtectionText;
     PPH_STRING DesktopInfoText;
     PPH_STRING UserName;
+    WCHAR PidHexText[PH_PTR_STR_LEN_1];
 
     // Graph buffers
     PH_GRAPH_BUFFERS CpuGraphBuffers;

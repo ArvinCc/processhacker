@@ -2,8 +2,8 @@
  * Process Hacker Window Explorer -
  *   window tree dialog
  *
- * Copyright (C) 2016 dmex
  * Copyright (C) 2011 wj32
+ * Copyright (C) 2016-2018 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -36,10 +36,6 @@ typedef struct _WINDOWS_CONTEXT
     ULONG HighlightingWindowCount;
 } WINDOWS_CONTEXT, *PWINDOWS_CONTEXT;
 
-VOID WepShowWindowsDialogCallback(
-    _In_ PVOID Parameter
-    );
-
 INT_PTR CALLBACK WepWindowsDlgProc(
     _In_ HWND hwndDlg,
     _In_ UINT uMsg,
@@ -54,17 +50,79 @@ INT_PTR CALLBACK WepWindowsPageProc(
     _In_ LPARAM lParam
     );
 
+HWND WepWindowsDialogHandle = NULL;
+HANDLE WepWindowsDialogThreadHandle = NULL;
+PH_EVENT WepWindowsInitializedEvent = PH_EVENT_INIT;
+PH_STRINGREF WepEmptyWindowsText = PH_STRINGREF_INIT(L"There are no windows to display.");
+#define PH_SHOWDIALOG (WM_APP + 501)
+
+NTSTATUS WepShowWindowsDialogThread(
+    _In_ PVOID Parameter
+    )
+{
+    BOOL result;
+    MSG message;
+    PH_AUTO_POOL autoPool;
+
+    PhInitializeAutoPool(&autoPool);
+
+    WepWindowsDialogHandle = CreateDialogParam(
+        PluginInstance->DllBase,
+        MAKEINTRESOURCE(IDD_WNDLIST),
+        NULL,
+        WepWindowsDlgProc,
+        (LPARAM)Parameter
+        );
+
+    PhSetEvent(&WepWindowsInitializedEvent);
+
+    while (result = GetMessage(&message, NULL, 0, 0))
+    {
+        if (result == -1)
+            break;
+
+        if (!IsDialogMessage(WepWindowsDialogHandle, &message))
+        {
+            TranslateMessage(&message);
+            DispatchMessage(&message);
+        }
+
+        PhDrainAutoPool(&autoPool);
+    }
+
+    PhDeleteAutoPool(&autoPool);
+    PhResetEvent(&WepWindowsInitializedEvent);
+
+    NtClose(WepWindowsDialogThreadHandle);
+    WepWindowsDialogThreadHandle = NULL;
+    WepWindowsDialogHandle = NULL;
+
+    return STATUS_SUCCESS;
+}
+
 VOID WeShowWindowsDialog(
     _In_ HWND ParentWindowHandle,
     _In_ PWE_WINDOW_SELECTOR Selector
     )
 {
-    PWINDOWS_CONTEXT context;
+    if (!WepWindowsDialogThreadHandle)
+    {
+        PWINDOWS_CONTEXT context;
 
-    context = PhAllocateZero(sizeof(WINDOWS_CONTEXT));
-    memcpy(&context->Selector, Selector, sizeof(WE_WINDOW_SELECTOR));
+        context = PhAllocateZero(sizeof(WINDOWS_CONTEXT));
+        memcpy(&context->Selector, Selector, sizeof(WE_WINDOW_SELECTOR));
 
-    ProcessHacker_Invoke(WE_PhMainWndHandle, WepShowWindowsDialogCallback, context);
+        if (!(WepWindowsDialogThreadHandle = PhCreateThread(0, WepShowWindowsDialogThread, context)))
+        {
+            PhFree(context);
+            PhShowStatus(NULL, L"Unable to create the window.", 0, GetLastError());
+            return;
+        }
+
+        PhWaitForEvent(&WepWindowsInitializedEvent, NULL);
+    }
+
+    PostMessage(WepWindowsDialogHandle, PH_SHOWDIALOG, 0, 0);
 }
 
 VOID WeShowWindowsPropPage(
@@ -83,23 +141,6 @@ VOID WeShowWindowsPropPage(
         );
 }
 
-VOID WepShowWindowsDialogCallback(
-    _In_ PVOID Parameter
-    )
-{
-    HWND hwnd;
-    PWINDOWS_CONTEXT context = Parameter;
-
-    hwnd = CreateDialogParam(
-        PluginInstance->DllBase,
-        MAKEINTRESOURCE(IDD_WNDLIST),
-        NULL,
-        WepWindowsDlgProc,
-        (LPARAM)context
-        );
-    ShowWindow(hwnd, SW_SHOW);
-}
-
 VOID WepDeleteWindowSelector(
     _In_ PWE_WINDOW_SELECTOR Selector
     )
@@ -113,27 +154,61 @@ VOID WepDeleteWindowSelector(
 }
 
 VOID WepFillWindowInfo(
+    _In_ PWE_WINDOW_TREE_CONTEXT Context,
     _In_ PWE_WINDOW_NODE Node
     )
 {
-    HWND hwnd;
+    PPH_STRING windowText;
     ULONG threadId;
     ULONG processId;
 
-    hwnd = Node->WindowHandle;
+    PhPrintPointer(Node->WindowHandleString, Node->WindowHandle);
+    GetClassName(Node->WindowHandle, Node->WindowClass, sizeof(Node->WindowClass) / sizeof(WCHAR));
 
-    GetClassName(hwnd, Node->WindowClass, sizeof(Node->WindowClass) / sizeof(WCHAR));
-    Node->WindowText = PhGetWindowText(hwnd);
+    if (PhGetWindowTextEx(Node->WindowHandle, PH_GET_WINDOW_TEXT_INTERNAL, &windowText) > 0)
+        PhMoveReference(&Node->WindowText, windowText);
 
-    if (!Node->WindowText)
-        Node->WindowText = PhReferenceEmptyString();
+    if (PhIsNullOrEmptyString(Node->WindowText))
+        PhMoveReference(&Node->WindowText, PhReferenceEmptyString());
 
-    threadId = GetWindowThreadProcessId(hwnd, &processId);
+    threadId = GetWindowThreadProcessId(Node->WindowHandle, &processId);
     Node->ClientId.UniqueProcess = UlongToHandle(processId);
     Node->ClientId.UniqueThread = UlongToHandle(threadId);
+    Node->ThreadString = PhGetClientIdName(&Node->ClientId);
 
-    Node->WindowVisible = !!IsWindowVisible(hwnd);
-    Node->HasChildren = !!FindWindowEx(hwnd, NULL, NULL, NULL);
+    Node->WindowVisible = !!IsWindowVisible(Node->WindowHandle);
+    Node->HasChildren = !!FindWindowEx(Node->WindowHandle, NULL, NULL, NULL);
+
+    if (processId)
+    {
+        HANDLE processHandle;
+        PVOID instanceHandle;
+        PPH_STRING fileName;
+
+        if (NT_SUCCESS(PhOpenProcess(&processHandle, PROCESS_QUERY_LIMITED_INFORMATION, UlongToHandle(processId))))
+        {
+            if (!(instanceHandle = (PVOID)GetWindowLongPtr(Node->WindowHandle, GWLP_HINSTANCE)))
+            {
+                instanceHandle = (PVOID)GetClassLongPtr(Node->WindowHandle, GCLP_HMODULE);
+            }
+
+            if (instanceHandle)
+            {
+                if (NT_SUCCESS(PhGetProcessMappedFileName(processHandle, instanceHandle, &fileName)))
+                {
+                    PhMoveReference(&fileName, PhResolveDevicePrefix(fileName));
+                    PhMoveReference(&fileName, PhGetBaseName(fileName));
+
+                    PhMoveReference(&Node->ModuleString, fileName);
+                }
+            }
+
+            NtClose(processHandle);
+        }
+    }
+
+    if (Context->FilterSupport.FilterList) // Note: Apply filter after filling window node data. (dmex)
+        Node->Node.Visible = PhApplyTreeNewFiltersToNode(&Context->FilterSupport, &Node->Node);
 }
 
 PWE_WINDOW_NODE WepAddChildWindowNode(
@@ -147,7 +222,7 @@ PWE_WINDOW_NODE WepAddChildWindowNode(
     childNode = WeAddWindowNode(Context);
     childNode->WindowHandle = hwnd;
 
-    WepFillWindowInfo(childNode);
+    WepFillWindowInfo(Context, childNode);
 
     if (ParentNode)
     {
@@ -246,7 +321,7 @@ VOID WepRefreshWindows(
 
             desktopNode = WeAddWindowNode(&Context->TreeContext);
             desktopNode->WindowHandle = GetDesktopWindow();
-            WepFillWindowInfo(desktopNode);
+            WepFillWindowInfo(&Context->TreeContext, desktopNode);
 
             PhAddItemList(Context->TreeContext.NodeRootList, desktopNode);
 
@@ -341,10 +416,8 @@ INT_PTR CALLBACK WepWindowsDlgProc(
     {
     case WM_INITDIALOG:
         {
-            PH_RECTANGLE windowRectangle;
-
-            SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)PH_LOAD_SHARED_ICON_SMALL((*(PVOID *)WeGetProcedureAddress("PhInstanceHandle")), MAKEINTRESOURCE(PHAPP_IDI_PROCESSHACKER)));
-            SendMessage(hwndDlg, WM_SETICON, ICON_BIG, (LPARAM)PH_LOAD_SHARED_ICON_LARGE((*(PVOID *)WeGetProcedureAddress("PhInstanceHandle")), MAKEINTRESOURCE(PHAPP_IDI_PROCESSHACKER)));
+            SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)PH_LOAD_SHARED_ICON_SMALL(WE_PhInstanceHandle, MAKEINTRESOURCE(PHAPP_IDI_PROCESSHACKER)));
+            SendMessage(hwndDlg, WM_SETICON, ICON_BIG, (LPARAM)PH_LOAD_SHARED_ICON_LARGE(WE_PhInstanceHandle, MAKEINTRESOURCE(PHAPP_IDI_PROCESSHACKER)));
 
             context->TreeNewHandle = GetDlgItem(hwndDlg, IDC_LIST);
             context->SearchBoxHandle = GetDlgItem(hwndDlg, IDC_SEARCHEDIT);
@@ -352,8 +425,8 @@ INT_PTR CALLBACK WepWindowsDlgProc(
             SetWindowText(hwndDlg, PH_AUTO_T(PH_STRING, WepGetWindowTitleForSelector(&context->Selector))->Buffer);
 
             PhCreateSearchControl(hwndDlg, context->SearchBoxHandle, L"Search Windows (Ctrl+K)");
-
             WeInitializeWindowTree(hwndDlg, context->TreeNewHandle, &context->TreeContext);
+            TreeNew_SetEmptyText(context->TreeNewHandle, &WepEmptyWindowsText, 0);
 
             PhRegisterDialog(hwndDlg);
 
@@ -361,22 +434,14 @@ INT_PTR CALLBACK WepWindowsDlgProc(
             PhAddLayoutItem(&context->LayoutManager, GetDlgItem(hwndDlg, IDC_SEARCHEDIT), NULL, PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
             PhAddLayoutItem(&context->LayoutManager, GetDlgItem(hwndDlg, IDC_LIST), NULL, PH_ANCHOR_ALL);
 
-            // Set up the window position and size.
-            windowRectangle.Position = PhGetIntegerPairSetting(SETTING_NAME_WINDOWS_WINDOW_POSITION);
-            windowRectangle.Size = PhGetScalableIntegerPairSetting(SETTING_NAME_WINDOWS_WINDOW_SIZE, TRUE).Pair;
-            PhAdjustRectangleToWorkingArea(NULL, &windowRectangle);
-
-            MoveWindow(hwndDlg, windowRectangle.Left, windowRectangle.Top, windowRectangle.Width, windowRectangle.Height, FALSE);
-
-            // Implement cascading by saving an offsetted rectangle.
-            windowRectangle.Left += 20;
-            windowRectangle.Top += 20;
-            PhSetIntegerPairSetting(SETTING_NAME_WINDOWS_WINDOW_POSITION, windowRectangle.Position);
+            if (PhGetIntegerPairSetting(SETTING_NAME_WINDOWS_WINDOW_POSITION).X != 0)
+                PhLoadWindowPlacementFromSetting(SETTING_NAME_WINDOWS_WINDOW_POSITION, SETTING_NAME_WINDOWS_WINDOW_SIZE, hwndDlg);
+            else
+                PhCenterWindow(hwndDlg, WE_PhMainWndHandle);
 
             WepRefreshWindows(context);
 
-            // HACK
-            PhSetDialogFocus(GetParent(hwndDlg), GetDlgItem(GetParent(hwndDlg), IDCANCEL));
+            PhSetDialogFocus(hwndDlg, context->TreeNewHandle);
 
             PhInitializeWindowTheme(hwndDlg, !!PhGetIntegerSetting(L"EnableThemeSupport"));
         }
@@ -392,6 +457,18 @@ INT_PTR CALLBACK WepWindowsDlgProc(
             WeDeleteWindowTree(&context->TreeContext);
             WepDeleteWindowSelector(&context->Selector);
             PhFree(context);
+
+            PostQuitMessage(0);
+        }
+        break;
+    case PH_SHOWDIALOG:
+        {
+            if (IsMinimized(hwndDlg))
+                ShowWindow(hwndDlg, SW_RESTORE);
+            else
+                ShowWindow(hwndDlg, SW_SHOW);
+
+            SetForegroundWindow(hwndDlg);
         }
         break;
     case WM_COMMAND:
@@ -429,7 +506,13 @@ INT_PTR CALLBACK WepWindowsDlgProc(
                 DestroyWindow(hwndDlg);
                 break;
             case IDC_REFRESH:
-                WepRefreshWindows(context);
+                {
+                    WepRefreshWindows(context);
+
+                    PhApplyTreeNewFilters(&context->TreeContext.FilterSupport);
+
+                    TreeNew_NodesStructured(context->TreeNewHandle);
+                }
                 break;
             case ID_SHOWCONTEXTMENU:
                 {
@@ -805,8 +888,8 @@ INT_PTR CALLBACK WepWindowsPageProc(
             context->SearchBoxHandle = GetDlgItem(hwndDlg, IDC_SEARCHEDIT);
 
             PhCreateSearchControl(hwndDlg, context->SearchBoxHandle, L"Search Windows (Ctrl+K)");
-
             WeInitializeWindowTree(hwndDlg, context->TreeNewHandle, &context->TreeContext);
+            TreeNew_SetEmptyText(context->TreeNewHandle, &WepEmptyWindowsText, 0);
 
             PhInitializeLayoutManager(&context->LayoutManager, hwndDlg);
             PhAddLayoutItem(&context->LayoutManager, GetDlgItem(hwndDlg, IDC_SEARCHEDIT), NULL, PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
@@ -864,7 +947,13 @@ INT_PTR CALLBACK WepWindowsPageProc(
             switch (GET_WM_COMMAND_ID(wParam, lParam))
             {
             case IDC_REFRESH:
-                WepRefreshWindows(context);
+                {
+                    WepRefreshWindows(context);
+
+                    PhApplyTreeNewFilters(&context->TreeContext.FilterSupport);
+
+                    TreeNew_NodesStructured(context->TreeNewHandle);
+                }
                 break;
             case ID_SHOWCONTEXTMENU:
                 {

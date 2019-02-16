@@ -590,6 +590,51 @@ PhGetProcessHandleCount(
         );
 }
 
+FORCEINLINE
+NTSTATUS
+PhGetProcessBreakOnTermination(
+    _In_ HANDLE ProcessHandle,
+    _Out_ PBOOLEAN BreakOnTermination
+    )
+{
+    NTSTATUS status;
+    ULONG breakOnTermination;
+
+    status = NtQueryInformationProcess(
+        ProcessHandle,
+        ProcessBreakOnTermination,
+        &breakOnTermination,
+        sizeof(ULONG),
+        NULL
+        );
+
+    if (NT_SUCCESS(status))
+    {
+        *BreakOnTermination = !!breakOnTermination;
+    }
+
+    return status;
+}
+
+FORCEINLINE
+NTSTATUS
+PhSetProcessBreakOnTermination(
+    _In_ HANDLE ProcessHandle,
+    _In_ BOOLEAN BreakOnTermination
+    )
+{
+    ULONG breakOnTermination;
+
+    breakOnTermination = BreakOnTermination ? 1 : 0;
+
+    return NtSetInformationProcess(
+        ProcessHandle,
+        ProcessBreakOnTermination,
+        &breakOnTermination,
+        sizeof(ULONG)
+        );
+}
+
 /**
  * Gets basic information for a thread.
  *
@@ -863,6 +908,51 @@ PhGetThreadWow64Context(
         Context,
         sizeof(WOW64_CONTEXT),
         NULL
+        );
+}
+
+FORCEINLINE
+NTSTATUS
+PhGetThreadBreakOnTermination(
+    _In_ HANDLE ThreadHandle,
+    _Out_ PBOOLEAN BreakOnTermination
+    )
+{
+    NTSTATUS status;
+    ULONG breakOnTermination;
+
+    status = NtQueryInformationThread(
+        ThreadHandle,
+        ThreadBreakOnTermination,
+        &breakOnTermination,
+        sizeof(ULONG),
+        NULL
+        );
+
+    if (NT_SUCCESS(status))
+    {
+        *BreakOnTermination = !!breakOnTermination;
+    }
+
+    return status;
+}
+
+FORCEINLINE
+NTSTATUS
+PhSetThreadBreakOnTermination(
+    _In_ HANDLE ProcessHandle,
+    _In_ BOOLEAN BreakOnTermination
+    )
+{
+    ULONG breakOnTermination;
+
+    breakOnTermination = BreakOnTermination ? 1 : 0;
+
+    return NtSetInformationThread(
+        ProcessHandle,
+        ThreadBreakOnTermination,
+        &breakOnTermination,
+        sizeof(ULONG)
         );
 }
 
@@ -1244,6 +1334,13 @@ PhGetTokenIsUIAccessEnabled(
     return status;
 }
 
+/**
+* Sets UIAccess flag for a token.
+*
+* \param TokenHandle A handle to a token. The handle must have TOKEN_ADJUST_DEFAULT access.
+* \param IsUIAccessEnabled The new flag state.
+* \remarks Enabling UIAccess requires SeTcbPrivilege.
+*/
 FORCEINLINE
 NTSTATUS
 PhSetTokenUIAccessEnabled(
@@ -1294,6 +1391,34 @@ PhGetTokenIsSandBoxInert(
 
     *IsSandBoxInert = !!sandBoxInert;
 
+    return status;
+}
+
+/**
+* Gets Mandatory Policy for a token.
+*
+* \param TokenHandle A handle to a token. The handle must have TOKEN_QUERY access.
+* \param MandatoryPolicy A variable which receives a set of mandatory integrity
+* policies enforced for the token.
+*/
+FORCEINLINE
+NTSTATUS
+PhGetTokenMandatoryPolicy(
+    _In_ HANDLE TokenHandle,
+    _Out_ PTOKEN_MANDATORY_POLICY MandatoryPolicy
+    )
+{
+    NTSTATUS status;
+    ULONG returnLength;
+
+    status = NtQueryInformationToken(
+        TokenHandle,
+        TokenMandatoryPolicy,
+        MandatoryPolicy,
+        sizeof(TOKEN_MANDATORY_POLICY),
+        &returnLength
+        );
+    
     return status;
 }
 
