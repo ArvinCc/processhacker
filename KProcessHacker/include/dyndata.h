@@ -36,6 +36,13 @@ EXT ULONG KphDynOtIndex OFFDEFAULT;
 EXT ULONG KphDynObDecodeShift OFFDEFAULT;
 EXT ULONG KphDynObAttributesShift OFFDEFAULT;
 
+EXT PVOID PspCreateProcessNotifyRoutine;
+EXT ULONG PspCreateProcessNotifyRoutineMaxCount;
+EXT PVOID PspLoadImageNotifyRoutine;
+EXT ULONG PspLoadImageNotifyRoutineMaxCount;
+EXT MemoryRange_t NtosRange;
+EXT MemoryRange_t ThisRange;
+
 NTSTATUS KphDynamicDataInitialization(
     VOID
     );

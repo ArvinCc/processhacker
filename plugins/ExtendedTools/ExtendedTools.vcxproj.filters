@@ -93,6 +93,12 @@
     <ClCompile Include="svcext.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="callbacktab.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="callbackprv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">
@@ -123,6 +129,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="gpumini.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="callbacktabp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

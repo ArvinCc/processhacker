@@ -104,6 +104,22 @@ typedef struct _DRIVER_SERVICE_KEY_NAME_INFORMATION
     UNICODE_STRING ServiceKeyName;
 } DRIVER_SERVICE_KEY_NAME_INFORMATION, *PDRIVER_SERVICE_KEY_NAME_INFORMATION;
 
+typedef enum _KPH_KERNEL_CALLBACK_TYPE
+{
+    KphCallbackPsCreateProcess,
+    KphCallbackPsCreateThread,
+    KphCallbackPsLoadImage,
+    KphMaxKernelCallbackType
+} KPH_KERNEL_CALLBACK_TYPE;
+
+typedef struct _KPH_ENUM_CALLBACK_ENTRY
+{
+    ULONG NextEntryOffset;
+    PVOID CallbackAddress;
+    ULONG Type;
+    PVOID ImageBase;
+}KPH_ENUM_CALLBACK_ENTRY, *PKPH_ENUM_CALLBACK_ENTRY;
+
 // ETW registration object information
 
 typedef struct _ETWREG_BASIC_INFORMATION
@@ -238,5 +254,7 @@ typedef enum _KPH_KEY_LEVEL
 // Misc.
 #define KPH_OPENDRIVER KPH_CTL_CODE(200)
 #define KPH_QUERYINFORMATIONDRIVER KPH_CTL_CODE(201)
+
+#define KPH_ENUMKERNELCALLBACK KPH_CTL_CODE(202)
 
 #endif

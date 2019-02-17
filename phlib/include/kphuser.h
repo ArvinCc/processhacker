@@ -303,6 +303,15 @@ KphQueryInformationDriver(
     _Out_opt_ PULONG ReturnLength
     );
 
+PHLIBAPI
+NTSTATUS
+NTAPI
+KphEnumKernelCallback(
+    _Out_writes_bytes_(BufferLength) PVOID Buffer,
+    _In_ ULONG BufferLength,
+    _Out_opt_ PULONG ReturnLength
+);
+
 // kphdata
 
 PHLIBAPI

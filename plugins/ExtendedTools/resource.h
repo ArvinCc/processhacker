@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
-// Microsoft Visual C++ generated include file.
-// Used by ExtendedTools.rc
+// Microsoft Visual C++ 生成的包含文件。
+// 供 ExtendedTools.rc 使用
 //
 #define ID_PROCESS_UNLOADEDMODULES      101
 #define IDD_UNLOADEDDLLS                102
@@ -31,6 +31,8 @@
 #define IDC_UTILIZATION                 132
 #define IDC_SPEED                       133
 #define IDD_SYSINFO_GPUDETAILS          141
+#define IDD_DISKTABERROR1               142
+#define IDD_CALLBACKTABERROR            142
 #define IDC_LIST                        1001
 #define IDC_REFRESH                     1002
 #define IDC_WORKERTHREADSTART           1005
@@ -107,7 +109,7 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        144
+#define _APS_NEXT_RESOURCE_VALUE        145
 #define _APS_NEXT_COMMAND_VALUE         40009
 #define _APS_NEXT_CONTROL_VALUE         1094
 #define _APS_NEXT_SYMED_VALUE           134

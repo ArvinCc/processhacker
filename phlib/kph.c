@@ -259,14 +259,14 @@ NTSTATUS KphDisconnect(
     return status;
 }
 
-BOOLEAN KphIsConnected(
+BOOLEAN NTAPI KphIsConnected(
     VOID
     )
 {
     return PhKphHandle != NULL;
 }
 
-BOOLEAN KphIsVerified(
+BOOLEAN NTAPI KphIsVerified(
     VOID
     )
 {
@@ -982,6 +982,26 @@ NTSTATUS KphQueryInformationDriver(
         &input,
         sizeof(input)
         );
+}
+
+NTSTATUS NTAPI KphEnumKernelCallback(
+    _Out_writes_bytes_(BufferLength) PVOID Buffer,
+    _In_ ULONG BufferLength,
+    _Out_opt_ PULONG ReturnLength
+)
+{
+    struct
+    {
+        PVOID Buffer;
+        ULONG BufferLength;
+        PULONG ReturnLength;
+    } input = { Buffer, BufferLength, ReturnLength };
+
+    return KphpDeviceIoControl(
+        KPH_ENUMKERNELCALLBACK,
+        &input,
+        sizeof(input)
+    );
 }
 
 NTSTATUS KphpDeviceIoControl(

@@ -52,6 +52,12 @@
     <ClCompile Include="verify.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="detours.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cs_driver_mm.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resource.rc">
@@ -66,6 +72,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\ntfill.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="detours.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

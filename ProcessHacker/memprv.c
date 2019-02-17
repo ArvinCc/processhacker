@@ -806,6 +806,17 @@ NTSTATUS PhQueryMemoryItemList(
             ProcessId
             )))
         {
+            //Enum kernel big pools for system process
+            if (ProcessId == SYSTEM_PROCESS_ID)
+            {
+                List->ProcessId = ProcessId;
+                PhInitializeAvlTree(&List->Set, PhpMemoryItemCompareFunction);
+                InitializeListHead(&List->ListHead);
+
+                PhpQueryKernelBigPoolMemoryItemList(Flags, List);
+                return STATUS_SUCCESS;
+            }
+
             return status;
         }
     }
@@ -906,9 +917,11 @@ ContinueLoop:
     if (Flags & PH_QUERY_MEMORY_WS_COUNTERS)
         PhpUpdateMemoryWsCounters(List, processHandle);
 
-    //Enum kernel big pools
-
-    PhpQueryKernelBigPoolMemoryItemList(Flags, List);
+    //Enum kernel big pools for system process
+    if (ProcessId == SYSTEM_PROCESS_ID)
+    {
+        PhpQueryKernelBigPoolMemoryItemList(Flags, List);
+    }
 
     NtClose(processHandle);
 

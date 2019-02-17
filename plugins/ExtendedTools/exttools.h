@@ -21,6 +21,8 @@ extern ULONG ProcessesUpdatedCount;
 #define PLUGIN_NAME L"ProcessHacker.ExtendedTools"
 #define SETTING_NAME_DISK_TREE_LIST_COLUMNS (PLUGIN_NAME L".DiskTreeListColumns")
 #define SETTING_NAME_DISK_TREE_LIST_SORT (PLUGIN_NAME L".DiskTreeListSort")
+#define SETTING_NAME_CALLBACK_TREE_LIST_COLUMNS (PLUGIN_NAME L".CallbackTreeListColumns")
+#define SETTING_NAME_CALLBACK_TREE_LIST_SORT (PLUGIN_NAME L".CallbackTreeListSort")
 #define SETTING_NAME_ENABLE_ETW_MONITOR (PLUGIN_NAME L".EnableEtwMonitor")
 #define SETTING_NAME_ENABLE_GPU_MONITOR (PLUGIN_NAME L".EnableGpuMonitor")
 #define SETTING_NAME_ENABLE_SYSINFO_GRAPHS (PLUGIN_NAME L".EnableSysInfoGraphs")
@@ -115,6 +117,22 @@ typedef struct _ET_DISK_ITEM
     ULONG HistoryPosition;
 } ET_DISK_ITEM, *PET_DISK_ITEM;
 
+// Callback item
+
+typedef struct _ET_CALLBACK_ITEM
+{
+    PVOID CallbackAddress;
+    ULONG Type;
+    PVOID ImageBase;
+
+    PPH_STRING ImageName;
+    PPH_STRING ImageNameWin32;
+    PPH_STRING ImageBaseName;
+    PPH_STRING CallbackAddressString;
+
+    BOOLEAN Alive;
+} ET_CALLBACK_ITEM, *PET_CALLBACK_ITEM;
+
 // Disk node
 
 #define ETDSTNC_NAME 0
@@ -142,6 +160,24 @@ typedef struct _ET_DISK_NODE
 
     PPH_STRING TooltipText;
 } ET_DISK_NODE, *PET_DISK_NODE;
+
+//Callback node
+
+#define ETCBTNC_CALLBACKADDRESS 0
+#define ETCBTNC_TYPE 1
+#define ETCBTNC_IMAGENAME 2
+#define ETCBTNC_MAXIMUM 3
+
+typedef struct _ET_CALLBACK_NODE
+{
+    PH_TREENEW_NODE Node;
+
+    PET_CALLBACK_ITEM CallbackItem;
+
+    PH_STRINGREF TextCache[ETCBTNC_MAXIMUM];
+
+    PPH_STRING TooltipText;
+} ET_CALLBACK_NODE, *PET_CALLBACK_NODE;
 
 // Process tree columns
 
@@ -364,6 +400,31 @@ PPH_STRING EtFileObjectToFileName(
     _In_ PVOID FileObject
     );
 
+// callback
+
+extern PPH_OBJECT_TYPE EtCallbackItemType;
+extern PH_CALLBACK EtCallbackItemAddedEvent;
+extern PH_CALLBACK EtCallbackItemModifiedEvent;
+extern PH_CALLBACK EtCallbackItemRemovedEvent;
+extern PH_CALLBACK EtCallbackItemsUpdatedEvent;
+
+VOID EtInitializeCallbackInformation(
+    VOID
+);
+
+VOID EtGetCallbackInformation(
+    VOID
+);
+
+PET_CALLBACK_ITEM EtCreateCallbackItem(
+    VOID
+);
+
+PET_CALLBACK_ITEM EtReferenceCallbackItem(
+    _In_ PVOID CallbackAddress,
+    _In_ ULONG Type
+);
+
 // procicon
 
 PET_PROCESS_ICON EtProcIconCreateProcessIcon(
@@ -405,6 +466,19 @@ VOID EtLoadSettingsDiskTreeList(
 VOID EtSaveSettingsDiskTreeList(
     VOID
     );
+
+//callbacktab
+VOID EtInitializeCallbackTab(
+    VOID
+);
+
+VOID EtLoadSettingsCallbackTreeList(
+    VOID
+);
+
+VOID EtSaveSettingsCallbackTreeList(
+    VOID
+);
 
 // gpumon
 

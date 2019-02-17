@@ -20,7 +20,7 @@
 #if !defined(_PHLIB_)
 #define PHLIBAPI __declspec(dllimport)
 #else
-#define PHLIBAPI
+#define PHLIBAPI __declspec(dllexport)
 #endif
 
 #include <phnt_windows.h>

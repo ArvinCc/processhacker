@@ -21,6 +21,7 @@
 
 #include <kph.h>
 #include <dyndata.h>
+#include "cs_driver_mm.h"
 
 DRIVER_INITIALIZE DriverEntry;
 DRIVER_UNLOAD DriverUnload;
@@ -61,6 +62,8 @@ NTSTATUS DriverEntry(
 
     PAGED_CODE();
 
+    cs_driver_mm_init();
+
     ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
 
     KphDriverObject = DriverObject;
@@ -68,9 +71,9 @@ NTSTATUS DriverEntry(
     if (!NT_SUCCESS(status = KphDynamicDataInitialization()))
         return status;
 
-    KphDynamicImport();
+    UtilpBuildPhysicalMemoryRanges();
 
-	UtilpBuildPhysicalMemoryRanges();
+    KphDynamicImport();
 
     if (!NT_SUCCESS(status = KphpReadDriverParameters(RegistryPath)))
         return status;

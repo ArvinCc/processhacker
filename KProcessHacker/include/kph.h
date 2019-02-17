@@ -214,6 +214,13 @@ NTSTATUS KpiQueryInformationDriver(
     _In_ KPROCESSOR_MODE AccessMode
     );
 
+NTSTATUS KpiEnumKernelCallback(
+    _Out_writes_bytes_(BufferLength) PVOID Buffer,
+    _In_ ULONG BufferLength,
+    _Out_opt_ PULONG ReturnLength,
+    _In_ KPROCESSOR_MODE AccessMode
+);
+
 // thread
 
 NTSTATUS KpiOpenThread(
@@ -420,5 +427,15 @@ NTSTATUS ExLockUserBuffer(
 	__deref_out PVOID *LockedBuffer,
 	__deref_out PVOID *LockVariable
 );
+
+typedef struct MemoryRange_s
+{
+    PVOID Base;
+    PVOID End;
+    int RegionFlags;
+}MemoryRange_t;
+
+typedef BOOLEAN(*EnumSystemModuleCallback)(PRTL_PROCESS_MODULE_INFORMATION, void *);
+typedef BOOLEAN(*EnumNotifyRoutineCallback)(PVOID, void *);
 
 #endif

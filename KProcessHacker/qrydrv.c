@@ -20,11 +20,16 @@
  */
 
 #include <kph.h>
+#include <dyndata.h>
+
+typedef BOOLEAN(*EnumNotifyRoutineCallback)(PVOID, void *);
 
 VOID KphpCopyInfoUnicodeString(
     _Out_ PVOID Information,
     _In_opt_ PUNICODE_STRING UnicodeString
     );
+
+NTKERNELAPI PVOID NTAPI RtlPcToFileHeader(_In_ PVOID PcValue, _Out_ PVOID *BaseOfImage);
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, KpiOpenDriver)
@@ -235,4 +240,184 @@ VOID KphpCopyInfoUnicodeString(
         targetUnicodeString->MaximumLength = 0;
         targetUnicodeString->Buffer = NULL;
     }
+}
+
+NTSTATUS EnumPsCreateProcessNotifyRoutines(EnumNotifyRoutineCallback callback, void *ctx)
+{
+    PVOID MagicPtr, Point, NotifyAddr;
+
+    if (!PspCreateProcessNotifyRoutine)
+        return STATUS_NOT_FOUND;
+
+    int maxCount = PspCreateProcessNotifyRoutineMaxCount ? PspCreateProcessNotifyRoutineMaxCount : 8;
+
+#ifdef _WIN64
+    for (int i = 0; i < maxCount; i++)
+    {
+        MagicPtr = (PVOID)((PUCHAR)PspCreateProcessNotifyRoutine + i * sizeof(PVOID));
+        Point = (PVOID)*(PULONG64)(MagicPtr);
+        if (Point != 0 && MmIsAddressValid(Point))
+        {
+            NotifyAddr = (PVOID)*(PULONG64)(((ULONG64)Point & 0xfffffffffffffff0ui64) + sizeof(EX_RUNDOWN_REF));
+            if (NotifyAddr > MmSystemRangeStart && callback(NotifyAddr, ctx))
+                return STATUS_SUCCESS;
+        }
+    }
+#else
+    for (int i = 0; i < maxCount; i++)
+    {
+        MagicPtr = (PVOID)((PUCHAR)PspCreateProcessNotifyRoutine + i * sizeof(PVOID));
+        Point = (PVOID)*(PULONG)(MagicPtr);
+        if (Point != 0 && MmIsAddressValid(Point))
+        {
+            NotifyAddr = (PVOID)*(PULONG)(((ULONG)Point & 0xfffffff8) + sizeof(EX_RUNDOWN_REF));
+            if (NotifyAddr > MmSystemRangeStart && callback(NotifyAddr, ctx))
+                return STATUS_SUCCESS;
+        }
+    }
+#endif
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS EnumPsLoadImageNotifyRoutines(EnumNotifyRoutineCallback callback, void *ctx)
+{
+    PVOID MagicPtr, Point, NotifyAddr;
+
+    if (!PspLoadImageNotifyRoutine)
+        return STATUS_NOT_FOUND;
+
+    int maxCount = PspLoadImageNotifyRoutineMaxCount ? PspLoadImageNotifyRoutineMaxCount : 8;
+
+#ifdef _WIN64
+    for (int i = 0; i < maxCount; i++)
+    {
+        MagicPtr = (PVOID)((PUCHAR)PspLoadImageNotifyRoutine + i * sizeof(PVOID));
+        Point = (PVOID)*(PULONG64)(MagicPtr);
+        if (Point != 0 && MmIsAddressValid(Point))
+        {
+            NotifyAddr = (PVOID)*(PULONG64)(((ULONG64)Point & 0xfffffffffffffff0ui64) + sizeof(EX_RUNDOWN_REF));
+            if (NotifyAddr > MmSystemRangeStart && callback(NotifyAddr, ctx))
+                return STATUS_SUCCESS;
+        }
+    }
+#else
+    for (int i = 0; i < maxCount; i++)
+    {
+        MagicPtr = (PVOID)((PUCHAR)PspLoadImageNotifyRoutine + i * sizeof(PVOID));
+        Point = (PVOID)*(PULONG)(MagicPtr);
+        if (Point != 0 && MmIsAddressValid(Point))
+        {
+            NotifyAddr = (PVOID)*(PULONG)(((ULONG)Point & 0xfffffff8) + sizeof(EX_RUNDOWN_REF));
+            if (NotifyAddr > MmSystemRangeStart && callback(NotifyAddr, ctx))
+                return STATUS_SUCCESS;
+        }
+    }
+#endif
+    return STATUS_SUCCESS;
+}
+
+typedef struct _KpiEnumKernelCallbackContext
+{
+    PVOID UserBuffer;
+    PVOID MappedAddress;
+    ULONG NextEntryOffset;
+    ULONG TotalSize;
+    ULONG BufferLength;
+    ULONG *RequiredLength;
+    NTSTATUS Status;
+    ULONG CurrentEnumType;
+}KpiEnumKernelCallbackContext;
+
+BOOLEAN KpiEnumKernelCallback_Enumerator(PVOID NotifyRoutine, void *context)
+{
+    PVOID ImageBase2;
+    KpiEnumKernelCallbackContext *ctx = (KpiEnumKernelCallbackContext *)context;
+
+    __try
+    {
+        KPH_ENUM_CALLBACK_ENTRY * EntryInfo = (KPH_ENUM_CALLBACK_ENTRY *)((PUCHAR)ctx->MappedAddress + ctx->TotalSize);
+        ctx->NextEntryOffset = sizeof(KPH_ENUM_CALLBACK_ENTRY);
+        ctx->TotalSize += sizeof(KPH_ENUM_CALLBACK_ENTRY);
+
+        if (ctx->TotalSize > ctx->BufferLength)
+        {
+            ctx->Status = STATUS_INFO_LENGTH_MISMATCH;
+            if (ARGUMENT_PRESENT(ctx->RequiredLength) == FALSE)
+                __leave;
+        }
+        else
+        {
+            EntryInfo->NextEntryOffset = 0;
+            EntryInfo->CallbackAddress = NotifyRoutine;
+            EntryInfo->Type = ctx->CurrentEnumType;
+            EntryInfo->ImageBase = RtlPcToFileHeader(NotifyRoutine, &ImageBase2);
+        }
+
+        if (NT_SUCCESS(ctx->Status)) {
+            EntryInfo->NextEntryOffset = ctx->NextEntryOffset;
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+
+    }
+
+    if (ARGUMENT_PRESENT(ctx->RequiredLength)) {
+        *ctx->RequiredLength = ctx->TotalSize;
+    }
+
+    return ctx->Status != STATUS_SUCCESS;
+}
+
+NTSTATUS KpiEnumKernelCallback(
+    _Out_writes_bytes_(BufferLength) PVOID Buffer,
+    _In_ ULONG BufferLength,
+    _Out_opt_ PULONG ReturnLength,
+    _In_ KPROCESSOR_MODE AccessMode
+)
+{
+    KpiEnumKernelCallbackContext ctx;
+
+    PVOID MappedAddress = NULL;
+    PVOID LockVariable = NULL;
+    NTSTATUS st;
+
+    if (ARGUMENT_PRESENT(ReturnLength)) {
+        *ReturnLength = 0;
+    }
+ 
+    if (BufferLength > 0)
+    {
+        st = ExLockUserBuffer(Buffer,
+            BufferLength,
+            ExGetPreviousMode(),
+            IoWriteAccess,
+            &MappedAddress,
+            &LockVariable);
+
+        if (!NT_SUCCESS(st))
+            return st;
+    }
+
+    ctx.UserBuffer = Buffer;
+    ctx.MappedAddress = MappedAddress;
+    ctx.NextEntryOffset = 0;
+    ctx.BufferLength = BufferLength;
+    ctx.RequiredLength = ReturnLength;
+    ctx.TotalSize = 0;
+    ctx.Status = STATUS_SUCCESS;
+
+    ctx.CurrentEnumType = KphCallbackPsCreateProcess;
+    st = EnumPsCreateProcessNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx);
+
+    ctx.CurrentEnumType = KphCallbackPsLoadImage;
+    st = EnumPsLoadImageNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx);
+
+    if (!NT_SUCCESS(st))
+        ctx.Status = st;
+
+    if (MappedAddress != NULL)
+        ExUnlockUserBuffer(LockVariable);
+
+    return ctx.Status;
 }

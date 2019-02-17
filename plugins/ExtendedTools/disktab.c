@@ -573,14 +573,15 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
     case TreeNewGetCellTooltip:
         {
             PPH_TREENEW_GET_CELL_TOOLTIP getCellTooltip = Parameter1;
-            PPH_PROCESS_NODE processNode;
+            //PPH_PROCESS_NODE processNode;
 
             node = (PET_DISK_NODE)getCellTooltip->Node;
 
             if (getCellTooltip->Column->Id != 0)
                 return FALSE;
 
-            if (!node->TooltipText)
+            //test
+            /*if (!node->TooltipText)
             {
                 if (processNode = PhFindProcessNode(node->DiskItem->ProcessId))
                 {
@@ -607,7 +608,7 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
                         }
                     }
                 }
-            }
+            }*/
 
             if (!PhIsNullOrEmptyString(node->TooltipText))
             {

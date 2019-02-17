@@ -580,6 +580,25 @@ NTSTATUS KphDispatchDeviceControl(
                 );
         }
         break;
+    case KPH_ENUMKERNELCALLBACK:
+    {
+        struct
+        {
+            PVOID Buffer;
+            ULONG BufferLength;
+            PULONG ReturnLength;
+        } *input = capturedInputPointer;
+
+        VERIFY_INPUT_LENGTH;
+
+        status = KpiEnumKernelCallback(
+            input->Buffer,
+            input->BufferLength,
+            input->ReturnLength,
+            accessMode
+        );
+    }
+    break;
     default:
         status = STATUS_INVALID_DEVICE_REQUEST;
         break;

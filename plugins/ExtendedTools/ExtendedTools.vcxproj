@@ -76,6 +76,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="callbackprv.c" />
+    <ClCompile Include="callbacktab.c" />
     <ClCompile Include="disktab.c" />
     <ClCompile Include="etwdisk.c" />
     <ClCompile Include="etwmini.c" />
@@ -103,6 +105,7 @@
     <ClCompile Include="wswatch.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="callbacktabp.h" />
     <ClInclude Include="d3dkmt.h" />
     <ClInclude Include="disktabp.h" />
     <ClInclude Include="etwmini.h" />

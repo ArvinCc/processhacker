@@ -67,6 +67,7 @@ VOID NTAPI UnloadCallback(
     )
 {
     EtSaveSettingsDiskTreeList();
+    EtSaveSettingsCallbackTreeList();
     EtEtwStatisticsUninitialization();
 }
 
@@ -149,6 +150,7 @@ VOID NTAPI MainWindowShowingCallback(
     )
 {
     EtInitializeDiskTab();
+    EtInitializeCallbackTab();
     EtRegisterToolbarGraphs();
 }
 
@@ -510,7 +512,9 @@ LOGICAL DllMain(
             PH_SETTING_CREATE settings[] =
             {
                 { StringSettingType, SETTING_NAME_DISK_TREE_LIST_COLUMNS, L"" },
+                { StringSettingType, SETTING_NAME_CALLBACK_TREE_LIST_COLUMNS, L"" },
                 { IntegerPairSettingType, SETTING_NAME_DISK_TREE_LIST_SORT, L"4,2" }, // 4, DescendingSortOrder
+                { IntegerPairSettingType, SETTING_NAME_CALLBACK_TREE_LIST_SORT, L"1,2" }, // 1, DescendingSortOrder
                 { IntegerSettingType, SETTING_NAME_ENABLE_ETW_MONITOR, L"1" },
                 { IntegerSettingType, SETTING_NAME_ENABLE_GPU_MONITOR, L"1" },
                 { IntegerSettingType, SETTING_NAME_ENABLE_SYSINFO_GRAPHS, L"1" },

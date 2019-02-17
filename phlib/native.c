@@ -197,7 +197,7 @@ NTSTATUS NTAPI PhReadVirtualMemory(
  * \param DesiredAccess The desired access to the process.
  * \param ProcessId The ID of the process.
  */
-NTSTATUS PhOpenProcess(
+NTSTATUS NTAPI PhOpenProcess(
     _Out_ PHANDLE ProcessHandle,
     _In_ ACCESS_MASK DesiredAccess,
     _In_ HANDLE ProcessId
@@ -278,7 +278,7 @@ NTSTATUS PhOpenProcessPublic(
  * \param DesiredAccess The desired access to the thread.
  * \param ThreadId The ID of the thread.
  */
-NTSTATUS PhOpenThread(
+NTSTATUS NTAPI PhOpenThread(
     _Out_ PHANDLE ThreadHandle,
     _In_ ACCESS_MASK DesiredAccess,
     _In_ HANDLE ThreadId
@@ -499,7 +499,7 @@ NTSTATUS PhSetObjectSecurity(
  * \param ProcessHandle A handle to a process. The handle must have PROCESS_TERMINATE access.
  * \param ExitStatus A status value that indicates why the process is being terminated.
  */
-NTSTATUS PhTerminateProcess(
+NTSTATUS NTAPI PhTerminateProcess(
     _In_ HANDLE ProcessHandle,
     _In_ NTSTATUS ExitStatus
     )

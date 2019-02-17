@@ -834,6 +834,8 @@ VOID PhMwpOnCommand(
             {
                 PhBoostProvider(&PhMwpNetworkProviderRegistration, NULL);
             }
+
+            PhInvokeCallback(PhGetGeneralCallback(GeneralCallbackRefreshProvider), NULL);
         }
         break;
     case ID_UPDATEINTERVAL_FAST:

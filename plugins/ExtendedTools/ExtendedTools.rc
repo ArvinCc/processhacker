@@ -12,7 +12,7 @@
 #undef APSTUDIO_READONLY_SYMBOLS
 
 /////////////////////////////////////////////////////////////////////////////
-// English (Australia) resources
+// 英语(澳大利亚) resources
 
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENA)
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_AUS
@@ -347,6 +347,15 @@ BEGIN
     CONTROL         "",IDC_GPULIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_ALIGNLEFT | WS_TABSTOP,0,0,309,210
 END
 
+IDD_CALLBACKTABERROR DIALOGEX 0, 0, 309, 176
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+EXSTYLE WS_EX_TRANSPARENT
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Kernel callback tab requires Process Hacker to be restarted with administrative privileges\r\nand KProcessHacker to be loaded.",IDC_ERROR,16,14,405,17
+    PUSHBUTTON      "Restart",IDC_RESTART,20,35,50,14
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -472,6 +481,14 @@ BEGIN
     IDD_SYSINFO_GPUDETAILS, DIALOG
     BEGIN
     END
+
+    IDD_CALLBACKTABERROR, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 302
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 169
+    END
 END
 #endif    // APSTUDIO_INVOKED
 
@@ -494,7 +511,17 @@ BEGIN
 END
 
 
-#endif    // English (Australia) resources
+/////////////////////////////////////////////////////////////////////////////
+//
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_CALLBACKTABERROR AFX_DIALOG_LAYOUT
+BEGIN
+    0
+END
+
+#endif    // 英语(澳大利亚) resources
 /////////////////////////////////////////////////////////////////////////////
 
 
