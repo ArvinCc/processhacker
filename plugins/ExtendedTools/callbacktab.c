@@ -239,13 +239,14 @@ VOID EtInitializeCallbackTreeList(
     TreeNew_SetRedraw(hwnd, FALSE);
 
     // Default columns
-    PhAddTreeNewColumn(hwnd, ETCBTNC_CALLBACKADDRESS, TRUE, L"Callback Address", 300, PH_ALIGN_LEFT, 0, 0);
-    PhAddTreeNewColumn(hwnd, ETCBTNC_TYPE, TRUE, L"Type", 100, PH_ALIGN_LEFT, 1, DT_PATH_ELLIPSIS);
-    PhAddTreeNewColumnEx(hwnd, ETCBTNC_IMAGENAME, TRUE, L"Image", 400, PH_ALIGN_LEFT, 2, DT_LEFT | DT_PATH_ELLIPSIS, TRUE);
+    PhAddTreeNewColumn(hwnd, ETCBTNC_INDEX, TRUE, L"Index", 50, PH_ALIGN_LEFT, 0, 0);
+    PhAddTreeNewColumn(hwnd, ETCBTNC_CALLBACKADDRESS, TRUE, L"Callback Address", 300, PH_ALIGN_LEFT, 1, 0);
+    PhAddTreeNewColumn(hwnd, ETCBTNC_TYPE, TRUE, L"Type", 100, PH_ALIGN_LEFT, 2, 0);
+    PhAddTreeNewColumnEx(hwnd, ETCBTNC_IMAGENAME, TRUE, L"Image", 400, PH_ALIGN_LEFT, 3, DT_LEFT | DT_PATH_ELLIPSIS, TRUE);
 
     TreeNew_SetRedraw(hwnd, TRUE);
 
-    TreeNew_SetSort(hwnd, ETCBTNC_TYPE, DescendingSortOrder);
+    TreeNew_SetSort(hwnd, ETCBTNC_TYPE, AscendingSortOrder);
 
     EtLoadSettingsCallbackTreeList();
 
@@ -386,7 +387,7 @@ VOID EtUpdateCallbackNode(
 
 #define END_SORT_FUNCTION \
     if (sortResult == 0) \
-        sortResult = PhCompareString(callbackItem1->ImageNameWin32, callbackItem2->ImageNameWin32, TRUE); \
+        sortResult = uint64cmp(callbackItem1->Index, callbackItem2->Index); \
     \
     return PhModifySort(sortResult, CallbackTreeNewSortOrder); \
 }
@@ -400,6 +401,12 @@ END_SORT_FUNCTION
 BEGIN_SORT_FUNCTION(Type)
 {
     sortResult = uint64cmp(callbackItem1->Type, callbackItem2->Type);
+}
+END_SORT_FUNCTION
+
+BEGIN_SORT_FUNCTION(Index)
+{
+    sortResult = uint64cmp(callbackItem1->Index, callbackItem2->Index);
 }
 END_SORT_FUNCTION
 
@@ -429,6 +436,7 @@ BOOLEAN NTAPI EtpCallbackTreeNewCallback(
         {
             static PVOID sortFunctions[] =
             {
+                SORT_FUNCTION(Index),
                 SORT_FUNCTION(CallbackAddress),
                 SORT_FUNCTION(Type),
                 SORT_FUNCTION(ImageNameWin32)
@@ -466,6 +474,9 @@ BOOLEAN NTAPI EtpCallbackTreeNewCallback(
 
         switch (getCellText->Id)
         {
+        case ETCBTNC_INDEX:
+            PhInitializeStringRefLongHint(&getCellText->Text, callbackItem->IndexString);
+            break;
         case ETCBTNC_CALLBACKADDRESS:
             getCellText->Text = PhGetStringRef(callbackItem->CallbackAddressString);
             break;
@@ -475,11 +486,38 @@ BOOLEAN NTAPI EtpCallbackTreeNewCallback(
             case KphCallbackPsCreateProcess:
                 PhInitializeStringRef(&getCellText->Text, L"CreateProcess");
                 break;
+            case KphCallbackPsCreateProcessEx:
+                PhInitializeStringRef(&getCellText->Text, L"CreateProcessEx");
+                break;
+            case KphCallbackPsCreateProcessEx2:
+                PhInitializeStringRef(&getCellText->Text, L"CreateProcessEx2");
+                break;
             case KphCallbackPsCreateThread:
                 PhInitializeStringRef(&getCellText->Text, L"CreateThread");
                 break;
+            case KphCallbackPsCreateThreadEx:
+                PhInitializeStringRef(&getCellText->Text, L"CreateThreadEx");
+                break;
             case KphCallbackPsLoadImage:
                 PhInitializeStringRef(&getCellText->Text, L"LoadImage");
+                break;
+            case KphCallbackPsLoadImageEx:
+                PhInitializeStringRef(&getCellText->Text, L"LoadImageEx (PS_IMAGE_NOTIFY_CONFLICTING_ARCHITECTURE)");
+                break;
+            case KphCallbackCmRegistry:
+                PhInitializeStringRef(&getCellText->Text, L"CmRegistry");
+                break;
+            case KphCallbackObProcessPre:
+                PhInitializeStringRef(&getCellText->Text, L"ObProcess (Pre)");
+                break;
+            case KphCallbackObProcessPost:
+                PhInitializeStringRef(&getCellText->Text, L"ObProcess (Post)");
+                break;
+            case KphCallbackObThreadPre:
+                PhInitializeStringRef(&getCellText->Text, L"ObThread (Pre)");
+                break;
+            case KphCallbackObThreadPost:
+                PhInitializeStringRef(&getCellText->Text, L"ObThread (Post)");
                 break;
             default:
                 PhInitializeStringRef(&getCellText->Text, L"Unknown");
@@ -969,8 +1007,6 @@ VOID NTAPI EtpOnCallbackItemsUpdated(
     {
         PET_CALLBACK_NODE node = CallbackNodeList->Items[i];
 
-        // The name and file name never change, so we don't invalidate that.
-        memset(&node->TextCache[2], 0, sizeof(PH_STRINGREF) * (ETCBTNC_MAXIMUM - 2));
         // Always get the newest tooltip text from the process tree.
         PhClearReference(&node->TooltipText);
     }

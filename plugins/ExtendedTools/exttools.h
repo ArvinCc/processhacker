@@ -123,14 +123,17 @@ typedef struct _ET_CALLBACK_ITEM
 {
     PVOID CallbackAddress;
     ULONG Type;
-    PVOID ImageBase;
+    ULONG Index;
 
+    PVOID ImageBase;
     PPH_STRING ImageName;
     PPH_STRING ImageNameWin32;
     PPH_STRING ImageBaseName;
     PPH_STRING CallbackAddressString;
 
     BOOLEAN Alive;
+
+    WCHAR IndexString[PH_INT32_STR_LEN];
 } ET_CALLBACK_ITEM, *PET_CALLBACK_ITEM;
 
 // Disk node
@@ -163,10 +166,11 @@ typedef struct _ET_DISK_NODE
 
 //Callback node
 
-#define ETCBTNC_CALLBACKADDRESS 0
-#define ETCBTNC_TYPE 1
-#define ETCBTNC_IMAGENAME 2
-#define ETCBTNC_MAXIMUM 3
+#define ETCBTNC_INDEX 0
+#define ETCBTNC_CALLBACKADDRESS 1
+#define ETCBTNC_TYPE 2
+#define ETCBTNC_IMAGENAME 3
+#define ETCBTNC_MAXIMUM 4
 
 typedef struct _ET_CALLBACK_NODE
 {
@@ -412,7 +416,7 @@ VOID EtInitializeCallbackInformation(
     VOID
 );
 
-VOID EtGetCallbackInformation(
+NTSTATUS EtGetCallbackInformation(
     VOID
 );
 

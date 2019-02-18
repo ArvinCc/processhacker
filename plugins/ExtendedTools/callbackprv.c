@@ -51,12 +51,13 @@ PH_CALLBACK_DECLARE(EtCallbackItemModifiedEvent);
 PH_CALLBACK_DECLARE(EtCallbackItemRemovedEvent);
 PH_CALLBACK_DECLARE(EtCallbackItemsUpdatedEvent);
 
-PPH_STRING EtGetKernelModuleName(PVOID ImageBase, PRTL_PROCESS_MODULES kernelModules)
+PRTL_PROCESS_MODULE_INFORMATION EtGetKernelModuleByAddress(PVOID VirtualAddress, PRTL_PROCESS_MODULES kernelModules)
 {
     for (ULONG i = 0; i < kernelModules->NumberOfModules; ++i)
     {
-        if(kernelModules->Modules[i].ImageBase == ImageBase)
-            return PhConvertMultiByteToUtf16(kernelModules->Modules[i].FullPathName);
+        if (VirtualAddress >= kernelModules->Modules[i].ImageBase &&
+            VirtualAddress < (PVOID)((PUCHAR)kernelModules->Modules[i].ImageBase + kernelModules->Modules[i].ImageSize))
+            return &kernelModules->Modules[i];
     }
 
     return NULL;
@@ -65,10 +66,11 @@ PPH_STRING EtGetKernelModuleName(PVOID ImageBase, PRTL_PROCESS_MODULES kernelMod
 VOID EtGetCallbackInformationInternal(
     PVOID CallbackAddress,
     ULONG Type,
-    PVOID ImageBase,
+    ULONG Index,
     PRTL_PROCESS_MODULES kernelModules
 )
 {
+    PRTL_PROCESS_MODULE_INFORMATION km;
     PET_CALLBACK_ITEM  callbackItem;
     WCHAR CallbackAddressString[PH_PTR_STR_LEN_1];
     WCHAR CallbackAddressOffsetString[PH_PTR_STR_LEN_1];
@@ -84,18 +86,24 @@ VOID EtGetCallbackInformationInternal(
         callbackItem->Alive = TRUE;
         callbackItem->CallbackAddress = CallbackAddress;
         callbackItem->Type = Type;
-        callbackItem->ImageBase = ImageBase;
-        callbackItem->ImageName = EtGetKernelModuleName(ImageBase, kernelModules);
-        if (!callbackItem->ImageName)
+        callbackItem->Index = Index;
+
+        PhPrintUInt32(callbackItem->IndexString, Index);
+
+        km = EtGetKernelModuleByAddress(CallbackAddress, kernelModules);
+        if (km)
         {
-            callbackItem->ImageName = PhReferenceEmptyString();
-            callbackItem->ImageNameWin32 = PhReferenceEmptyString();
-            callbackItem->ImageBaseName = PhReferenceEmptyString();
+            callbackItem->ImageBase = km->ImageBase;
+            callbackItem->ImageName = PhConvertMultiByteToUtf16(km->FullPathName);
+            callbackItem->ImageNameWin32 = PhGetFileName(callbackItem->ImageName);
+            callbackItem->ImageBaseName = PhGetBaseName(callbackItem->ImageName);
         }
         else
         {
-            callbackItem->ImageNameWin32 = PhGetFileName(callbackItem->ImageName);
-            callbackItem->ImageBaseName = PhGetBaseName(callbackItem->ImageName);
+            callbackItem->ImageBase = NULL;
+            callbackItem->ImageName = PhReferenceEmptyString();
+            callbackItem->ImageNameWin32 = PhReferenceEmptyString();
+            callbackItem->ImageBaseName = PhReferenceEmptyString();
         }
 
         PhPrintPointer(CallbackAddressString, callbackItem->CallbackAddress);
@@ -129,7 +137,7 @@ VOID EtGetCallbackInformationInternal(
     }
 }
 
-VOID EtGetCallbackInformationEnumerate(PRTL_PROCESS_MODULES kernelModules)
+NTSTATUS EtGetCallbackInformationEnumerate(PRTL_PROCESS_MODULES kernelModules)
 {
     NTSTATUS st;
     ULONG cbBuffer = 0;
@@ -150,7 +158,7 @@ VOID EtGetCallbackInformationEnumerate(PRTL_PROCESS_MODULES kernelModules)
 
         if (pBuffer == NULL)
         {
-            return;
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
 
         st = KphEnumKernelCallback(pBuffer, cbBuffer, &cbReturn);
@@ -164,12 +172,12 @@ VOID EtGetCallbackInformationEnumerate(PRTL_PROCESS_MODULES kernelModules)
 
         if (STATUS_INFO_LENGTH_MISMATCH != st)//buffer length mismatch
         {
-            return;
+            return st;
         }
     }
 
     if (pBuffer == NULL)
-        return;
+        return st;
 
     if (cbReturn)
     {
@@ -182,23 +190,29 @@ VOID EtGetCallbackInformationEnumerate(PRTL_PROCESS_MODULES kernelModules)
         {
             if (pInfo->CallbackAddress)
             {
-                EtGetCallbackInformationInternal(pInfo->CallbackAddress, pInfo->Type, pInfo->ImageBase, kernelModules);
+                EtGetCallbackInformationInternal(pInfo->CallbackAddress, pInfo->Type, pInfo->Index, kernelModules);
             }
 
             if (pInfo->NextEntryOffset == 0)
                 break;
 
             pInfo = (PKPH_ENUM_CALLBACK_ENTRY)(((PUCHAR)pInfo) + pInfo->NextEntryOffset);
+
+            if ((PUCHAR)pInfo - (PUCHAR)pBuffer >= cbReturn)
+                break;
         }
     }
 
     PhFree(pBuffer);
+
+    return st;
 }
 
-VOID EtGetCallbackInformation(VOID)
+NTSTATUS EtGetCallbackInformation(VOID)
 {
+    NTSTATUS st;
     PET_CALLBACK_ITEM callbackItem;
-    ULONG enumerationKey;
+    ULONG enumerationKey;    
     PRTL_PROCESS_MODULES kernelModules = NULL;
 
     PhEnumKernelModules(&kernelModules);
@@ -209,7 +223,7 @@ VOID EtGetCallbackInformation(VOID)
         callbackItem->Alive = FALSE;
     }
 
-    EtGetCallbackInformationEnumerate(kernelModules);
+    st = EtGetCallbackInformationEnumerate(kernelModules);
 
     enumerationKey = 0;
     while (PhEnumHashtable(EtCallbackHashtable, (PVOID *)&callbackItem, &enumerationKey))
@@ -222,6 +236,21 @@ VOID EtGetCallbackInformation(VOID)
         PhFree(kernelModules);
 
     PhInvokeCallback(&EtCallbackItemsUpdatedEvent, NULL);
+
+    if (st != STATUS_SUCCESS)
+    {
+        if (PhGetIntegerSetting(L"EnableWarnings"))
+        {
+            PhShowStatus(
+                PhMainWndHandle,
+                L"Failed to retrieve callback data from KProcessHacker",
+                st,
+                0
+            );
+        }
+    }
+
+    return st;
 }
 
 VOID EtInitializeCallbackInformation(

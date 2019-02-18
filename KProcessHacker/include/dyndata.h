@@ -40,6 +40,7 @@ EXT PVOID PspCreateProcessNotifyRoutine;
 EXT ULONG PspCreateProcessNotifyRoutineMaxCount;
 EXT PVOID PspLoadImageNotifyRoutine;
 EXT ULONG PspLoadImageNotifyRoutineMaxCount;
+EXT PVOID CmCallbackListHead;
 EXT MemoryRange_t NtosRange;
 EXT MemoryRange_t ThisRange;
 

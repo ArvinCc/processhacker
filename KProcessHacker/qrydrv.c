@@ -29,8 +29,6 @@ VOID KphpCopyInfoUnicodeString(
     _In_opt_ PUNICODE_STRING UnicodeString
     );
 
-NTKERNELAPI PVOID NTAPI RtlPcToFileHeader(_In_ PVOID PcValue, _Out_ PVOID *BaseOfImage);
-
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, KpiOpenDriver)
 #pragma alloc_text(PAGE, KpiQueryInformationDriver)
@@ -242,7 +240,473 @@ VOID KphpCopyInfoUnicodeString(
     }
 }
 
-NTSTATUS EnumPsCreateProcessNotifyRoutines(EnumNotifyRoutineCallback callback, void *ctx)
+BOOLEAN
+FORCEINLINE
+ExFastRefObjectNull(
+    __in EX_FAST_REF FastRef
+)
+/*++
+
+Routine Description:
+
+    This routine allows the caller to test of the specified fastref value
+    has a null pointer
+
+Arguments:
+
+    FastRef - Fast reference block to be used
+
+Return Value:
+
+    BOOLEAN - TRUE if the object is NULL FALSE otherwise
+
+--*/
+{
+    return (BOOLEAN)(FastRef.Value == 0);
+}
+
+LOGICAL
+FORCEINLINE
+ExFastRefCanBeReferenced(
+    __in EX_FAST_REF FastRef
+)
+/*++
+
+Routine Description:
+
+    This routine allows the caller to determine if the fast reference
+    structure contains cached references.
+
+Arguments:
+
+    FastRef - Fast reference block to be used
+
+Return Value:
+
+    LOGICAL - TRUE: There were cached references in the object,
+              FALSE: No cached references are available.
+
+--*/
+{
+    return FastRef.RefCnt != 0;
+}
+
+PVOID
+FORCEINLINE
+ExFastRefGetObject(
+    __in EX_FAST_REF FastRef
+)
+/*++
+
+Routine Description:
+
+    This routine allows the caller to obtain the object pointer from a fast
+    reference structure.
+
+Arguments:
+
+    FastRef - Fast reference block to be used
+
+Return Value:
+
+    PVOID - The contained object or NULL if there isn't one.
+
+--*/
+{
+    return (PVOID)(FastRef.Value & ~MAX_FAST_REFS);
+}
+
+EX_FAST_REF
+ExFastReference(
+    __inout PEX_FAST_REF FastRef
+)
+/*++
+
+Routine Description:
+
+    This routine attempts to obtain a fast (cached) reference from a fast
+    reference structure.
+
+Arguments:
+
+    FastRef - Fast reference block to be used
+
+Return Value:
+
+    EX_FAST_REF - The old or current contents of the fast reference structure.
+
+--*/
+{
+    EX_FAST_REF OldRef, NewRef;
+
+    while (1) {
+        //
+        // Fetch the old contents of the fast ref structure
+        //
+        OldRef = ReadForWriteAccess(FastRef);
+        //
+        // If the object pointer is null or if there are no cached references
+        // left then bail. In the second case this reference will need to be
+        // taken while holding the lock. Both cases are covered by the single
+        // test of the lower bits since a null pointer can never have cached
+        // refs.
+        //
+        if (OldRef.RefCnt != 0) {
+            //
+            // We know the bottom bits can't underflow into the pointer for a
+            // request that works so just decrement
+            //
+            NewRef.Value = OldRef.Value - 1;
+            NewRef.Object = InterlockedCompareExchangePointerAcquire(&FastRef->Object,
+                NewRef.Object,
+                OldRef.Object);
+            if (NewRef.Object != OldRef.Object) {
+                //
+                // The structured changed beneath us. Try the operation again
+                //
+                continue;
+            }
+        }
+        break;
+    }
+
+    return OldRef;
+}
+
+LOGICAL
+ExFastRefDereference(
+    __inout PEX_FAST_REF FastRef,
+    __in PVOID Object
+)
+/*++
+
+Routine Description:
+
+    This routine attempts to release a fast reference from a fast ref
+    structure. This routine could be called for a reference obtained
+    directly from the object but presumably the chances of the pointer
+    matching would be unlikely. The algorithm will work correctly in this
+    case.
+
+Arguments:
+
+    FastRef - Fast reference block to be used
+
+    Object - The original object that the reference was taken on.
+
+Return Value:
+
+    LOGICAL - TRUE: The fast dereference worked ok, FALSE: the
+              dereference didn't.
+
+--*/
+{
+    EX_FAST_REF OldRef, NewRef;
+
+    while (1) {
+        //
+        // Fetch the old contents of the fast ref structure
+        //
+        OldRef = ReadForWriteAccess(FastRef);
+
+        //
+        // If the reference cache is fully populated or the pointer has
+        // changed to another object then just return the old value. The
+        // caller can return the reference to the object instead.
+        //
+        if ((OldRef.Value ^ (ULONG_PTR)Object) >= MAX_FAST_REFS) {
+            return FALSE;
+        }
+        //
+        // We know the bottom bits can't overflow into the pointer so just
+        // increment
+        //
+        NewRef.Value = OldRef.Value + 1;
+        NewRef.Object = InterlockedCompareExchangePointerRelease(&FastRef->Object,
+            NewRef.Object,
+            OldRef.Object);
+        if (NewRef.Object != OldRef.Object) {
+            //
+            // The structured changed beneath us. Try the operation again
+            //
+            continue;
+        }
+        break;
+    }
+    return TRUE;
+}
+
+LOGICAL
+FORCEINLINE
+ExFastRefIsLastReference(
+    __in EX_FAST_REF FastRef
+)
+/*++
+
+Routine Description:
+
+    This routine allows the caller to determine if the fast reference
+    structure contains only 1 cached reference.
+
+Arguments:
+
+    FastRef - Fast reference block to be used
+
+Return Value:
+
+    LOGICAL - TRUE: There is only one cached reference in the object,
+              FALSE: The is more or less than one cached reference available.
+
+--*/
+{
+    return FastRef.RefCnt == 1;
+}
+
+ULONG
+FORCEINLINE
+ExFastRefGetAdditionalReferenceCount(
+    VOID
+)
+{
+    return MAX_FAST_REFS;
+}
+
+LOGICAL
+FORCEINLINE
+ExFastRefAddAdditionalReferenceCounts(
+    __inout PEX_FAST_REF FastRef,
+    __in PVOID Object,
+    __in ULONG RefsToAdd
+)
+/*++
+
+Routine Description:
+
+    This routine attempts to update the cached references on structure to
+    allow future callers to run lock free. Callers must have already biased
+    the object by the RefsToAdd reference count. This operation can fail at
+    which point the caller should removed the extra references added and
+    continue.
+
+Arguments:
+
+    FastRef - Fast reference block to be used
+
+    Object - The original object that has had its reference count biased.
+
+    RefsToAdd - The number of references to add to the cache
+
+Return Value:
+
+    LOGICAL - TRUE: The references where cached ok, FALSE: The references
+              could not be cached.
+
+--*/
+{
+    EX_FAST_REF OldRef, NewRef;
+
+    ASSERT(RefsToAdd <= MAX_FAST_REFS);
+    ASSERT((((ULONG_PTR)Object)&MAX_FAST_REFS) == 0);
+
+    while (1) {
+        //
+        // Fetch the old contents of the fast ref structure
+        //
+        OldRef = ReadForWriteAccess(FastRef);
+
+        //
+        // If the count would push us above maximum cached references or
+        // if the object pointer has changed the fail the request.
+        //
+        if (OldRef.RefCnt + RefsToAdd > MAX_FAST_REFS ||
+            (ULONG_PTR)Object != (OldRef.Value & ~MAX_FAST_REFS)) {
+            return FALSE;
+        }
+        //
+        // We know the bottom bits can't overflow into the pointer so just
+        // increment
+        //
+        NewRef.Value = OldRef.Value + RefsToAdd;
+        NewRef.Object = InterlockedCompareExchangePointerAcquire(&FastRef->Object,
+            NewRef.Object,
+            OldRef.Object);
+        if (NewRef.Object != OldRef.Object) {
+            //
+            // The structured changed beneath us. Use the return value from the
+            // exchange and try it all again.
+            //
+            continue;
+        }
+        break;
+    }
+    return TRUE;
+}
+
+PEX_CALLBACK_ROUTINE_BLOCK
+ExReferenceCallBackBlock(
+    IN OUT PEX_CALLBACK CallBack
+)
+/*++
+
+Routine Description:
+
+    This function takes a reference on the call back block inside the
+    callback structure.
+
+Arguments:
+
+    CallBack - Call back to obtain the call back block from
+
+Return Value:
+
+    PEX_CALLBACK_ROUTINE_BLOCK - Referenced structure or NULL if these wasn't one
+
+--*/
+{
+    EX_FAST_REF OldRef;
+    PEX_CALLBACK_ROUTINE_BLOCK CallBackBlock;
+
+    //
+    // Get a reference to the callback block if we can.
+    //
+    OldRef = ExFastReference(&CallBack->RoutineBlock);
+
+    //
+    // If there is no callback then return
+    //
+    if (ExFastRefObjectNull(OldRef)) {
+        return NULL;
+    }
+    //
+    // If we didn't get a reference then use a lock to get one.
+    //
+    if (!ExFastRefCanBeReferenced(OldRef)) {
+        PKTHREAD CurrentThread;
+        CurrentThread = KeGetCurrentThread();
+
+        KeEnterCriticalRegion();
+
+       // ExAcquirePushLockExclusive(&ExpCallBackFlush);
+
+        CallBackBlock = ExFastRefGetObject(CallBack->RoutineBlock);
+        if (CallBackBlock && !ExAcquireRundownProtection(&CallBackBlock->RundownProtect)) {
+            CallBackBlock = NULL;
+        }
+
+        //ExReleasePushLockExclusive(&ExpCallBackFlush);
+
+        KeLeaveCriticalRegion();
+
+        if (CallBackBlock == NULL) {
+            return NULL;
+        }
+
+    }
+    else {
+        CallBackBlock = ExFastRefGetObject(OldRef);
+
+        //
+        // If we just removed the last reference then attempt fix it up.
+        //
+        if (ExFastRefIsLastReference(OldRef)) {// && !ExpCallBackReturnRefs
+            ULONG RefsToAdd;
+
+            RefsToAdd = ExFastRefGetAdditionalReferenceCount();
+
+            //
+            // If we can't add the references then just give up
+            //
+            if (ExAcquireRundownProtectionEx(&CallBackBlock->RundownProtect,
+                RefsToAdd)) {
+                //
+                // Repopulate the cached refs. If this fails we just give them back.
+                //
+                if (!ExFastRefAddAdditionalReferenceCounts(&CallBack->RoutineBlock,
+                    CallBackBlock,
+                    RefsToAdd)) {
+                    ExReleaseRundownProtectionEx(&CallBackBlock->RundownProtect,
+                        RefsToAdd);
+                }
+            }
+        }
+    }
+
+    return CallBackBlock;
+}
+
+PEX_CALLBACK_FUNCTION
+ExGetCallBackBlockRoutine(
+    IN PEX_CALLBACK_ROUTINE_BLOCK CallBackBlock
+)
+/*++
+
+Routine Description:
+
+    This function gets the routine associated with a call back block
+
+Arguments:
+
+    CallBackBlock - Call back block to obtain routine for
+
+Return Value:
+
+    PEX_CALLBACK_FUNCTION - The function pointer associated with this block
+
+--*/
+{
+    return CallBackBlock->Function;
+}
+
+PVOID
+ExGetCallBackBlockContext(
+    IN PEX_CALLBACK_ROUTINE_BLOCK CallBackBlock
+)
+/*++
+
+Routine Description:
+
+    This function gets the context associated with a call back block
+
+Arguments:
+
+    CallBackBlock - Call back block to obtain context for
+
+Return Value:
+
+    PVOID - The context associated with this block
+
+--*/
+{
+    return CallBackBlock->Context;
+}
+
+VOID
+ExDereferenceCallBackBlock(
+    IN OUT PEX_CALLBACK CallBack,
+    IN PEX_CALLBACK_ROUTINE_BLOCK CallBackBlock
+)
+/*++
+
+Routine Description:
+
+    This returns a reference previous obtained on a call back block
+
+Arguments:
+
+    CallBackBlock - Call back block to return reference to
+
+Return Value:
+
+    None
+
+--*/
+{
+    if (!ExFastRefDereference(&CallBack->RoutineBlock, CallBackBlock)) {
+        ExReleaseRundownProtection(&CallBackBlock->RundownProtect);
+    }
+}
+
+NTSTATUS EnumPsCreateProcessNotifyRoutines(EnumNotifyRoutineCallback callback, void *ctx, int flags)
 {
     PVOID MagicPtr, Point, NotifyAddr;
 
@@ -251,35 +715,27 @@ NTSTATUS EnumPsCreateProcessNotifyRoutines(EnumNotifyRoutineCallback callback, v
 
     int maxCount = PspCreateProcessNotifyRoutineMaxCount ? PspCreateProcessNotifyRoutineMaxCount : 8;
 
-#ifdef _WIN64
+    PEX_CALLBACK Psp = (PEX_CALLBACK)PspCreateProcessNotifyRoutine;
+
     for (int i = 0; i < maxCount; i++)
     {
-        MagicPtr = (PVOID)((PUCHAR)PspCreateProcessNotifyRoutine + i * sizeof(PVOID));
-        Point = (PVOID)*(PULONG64)(MagicPtr);
-        if (Point != 0 && MmIsAddressValid(Point))
-        {
-            NotifyAddr = (PVOID)*(PULONG64)(((ULONG64)Point & 0xfffffffffffffff0ui64) + sizeof(EX_RUNDOWN_REF));
-            if (NotifyAddr > MmSystemRangeStart && callback(NotifyAddr, ctx))
-                return STATUS_SUCCESS;
+        PEX_CALLBACK_ROUTINE_BLOCK CallBack = ExReferenceCallBackBlock(&Psp[i]);
+        if (CallBack != NULL) {
+            PVOID Routine = ExGetCallBackBlockRoutine(CallBack);
+            int CallbackFlags = (int)(ULONG_PTR)ExGetCallBackBlockContext(CallBack);
+            if (Routine > MmSystemRangeStart && CallbackFlags == flags && callback(Routine, ctx))
+            {
+                ExDereferenceCallBackBlock(&Psp[i], CallBack);
+                break;
+            }
+            ExDereferenceCallBackBlock(&Psp[i], CallBack);
         }
     }
-#else
-    for (int i = 0; i < maxCount; i++)
-    {
-        MagicPtr = (PVOID)((PUCHAR)PspCreateProcessNotifyRoutine + i * sizeof(PVOID));
-        Point = (PVOID)*(PULONG)(MagicPtr);
-        if (Point != 0 && MmIsAddressValid(Point))
-        {
-            NotifyAddr = (PVOID)*(PULONG)(((ULONG)Point & 0xfffffff8) + sizeof(EX_RUNDOWN_REF));
-            if (NotifyAddr > MmSystemRangeStart && callback(NotifyAddr, ctx))
-                return STATUS_SUCCESS;
-        }
-    }
-#endif
+
     return STATUS_SUCCESS;
 }
 
-NTSTATUS EnumPsLoadImageNotifyRoutines(EnumNotifyRoutineCallback callback, void *ctx)
+NTSTATUS EnumPsLoadImageNotifyRoutines(EnumNotifyRoutineCallback callback, void *ctx, int flags)
 {
     PVOID MagicPtr, Point, NotifyAddr;
 
@@ -288,31 +744,151 @@ NTSTATUS EnumPsLoadImageNotifyRoutines(EnumNotifyRoutineCallback callback, void 
 
     int maxCount = PspLoadImageNotifyRoutineMaxCount ? PspLoadImageNotifyRoutineMaxCount : 8;
 
-#ifdef _WIN64
+    PEX_CALLBACK Psp = (PEX_CALLBACK)PspLoadImageNotifyRoutine;
+
     for (int i = 0; i < maxCount; i++)
     {
-        MagicPtr = (PVOID)((PUCHAR)PspLoadImageNotifyRoutine + i * sizeof(PVOID));
-        Point = (PVOID)*(PULONG64)(MagicPtr);
-        if (Point != 0 && MmIsAddressValid(Point))
-        {
-            NotifyAddr = (PVOID)*(PULONG64)(((ULONG64)Point & 0xfffffffffffffff0ui64) + sizeof(EX_RUNDOWN_REF));
-            if (NotifyAddr > MmSystemRangeStart && callback(NotifyAddr, ctx))
-                return STATUS_SUCCESS;
+        PEX_CALLBACK_ROUTINE_BLOCK CallBack = ExReferenceCallBackBlock(&Psp[i]);
+        if (CallBack != NULL) {
+            PVOID Routine = ExGetCallBackBlockRoutine(CallBack);
+            int CallbackFlags = (int)(ULONG_PTR)ExGetCallBackBlockContext(CallBack);
+            if (Routine > MmSystemRangeStart && callback(Routine, ctx))
+            {
+                ExDereferenceCallBackBlock(&Psp[i], CallBack);
+                break;
+            }
+            ExDereferenceCallBackBlock(&Psp[i], CallBack);
         }
     }
-#else
-    for (int i = 0; i < maxCount; i++)
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS EnumCmRegistryCallbacks(EnumNotifyRoutineCallback callback, void *ctx)
+{
+    if (!CmCallbackListHead)
+        return STATUS_NOT_FOUND;
+
+    PCM_NOTIFY_ENTRY notify = *(PCM_NOTIFY_ENTRY *)CmCallbackListHead;
+    do
     {
-        MagicPtr = (PVOID)((PUCHAR)PspLoadImageNotifyRoutine + i * sizeof(PVOID));
-        Point = (PVOID)*(PULONG)(MagicPtr);
-        if (Point != 0 && MmIsAddressValid(Point))
+        if (notify && MmIsAddressValid(notify))
         {
-            NotifyAddr = (PVOID)*(PULONG)(((ULONG)Point & 0xfffffff8) + sizeof(EX_RUNDOWN_REF));
-            if (NotifyAddr > MmSystemRangeStart && callback(NotifyAddr, ctx))
-                return STATUS_SUCCESS;
+            if (notify->Function > MmSystemRangeStart && MmIsAddressValid((PVOID)(notify->Function)))
+            {
+                if (callback(notify->Function, ctx))
+                    return STATUS_SUCCESS;
+            }
         }
+        else
+        {
+            break;
+        }
+        notify = (PCM_NOTIFY_ENTRY)notify->ListEntryHead.Flink;
+    } while (notify != (*(PCM_NOTIFY_ENTRY*)(CmCallbackListHead)));
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS EnumProcessObCallbacks(EnumNotifyRoutineCallback callback, void *ctx, BOOLEAN IsPost)
+{
+    PLIST_ENTRY CurEntry;
+    PLIST_ENTRY ListEntry = NULL;
+    POBJECT_TYPE ObjType = *PsProcessType;
+
+    if (KphDynOsVersionInfo.dwBuildNumber >= 9200)
+    {
+        POBJECT_TYPE_WIN8 ObjectType = (POBJECT_TYPE_WIN8)ObjType;
+        ListEntry = (PLIST_ENTRY)&ObjectType->CallbackList;
     }
-#endif
+    else if (KphDynOsVersionInfo.dwBuildNumber >= 7600)
+    {
+        POBJECT_TYPE_WIN7 ObjectType = (POBJECT_TYPE_WIN7)ObjType;
+        ListEntry = (PLIST_ENTRY)&ObjectType->CallbackList;
+    }
+    else if (KphDynOsVersionInfo.dwBuildNumber >= 6000)
+    {
+        POBJECT_TYPE_VISTA ObjectType = (POBJECT_TYPE_VISTA)ObjType;
+        ListEntry = (PLIST_ENTRY)&ObjectType->CallbackList;
+    }
+
+    if (!ListEntry)
+        return STATUS_NOT_FOUND;
+
+    CurEntry = ListEntry->Flink;
+    do
+    {
+        POB_CALLBACK ObCallback = (POB_CALLBACK)CurEntry;
+        if (MmIsAddressValid(ObCallback))
+        {
+            if (ObCallback->ObHandle && ObCallback->ObjectType == ObjType)
+            {
+                if (IsPost && ObCallback->PostCall > MmSystemRangeStart)
+                {
+                    if (callback(ObCallback->PostCall, ctx))
+                        return STATUS_SUCCESS;
+                }
+                else if (!IsPost && ObCallback->PreCall > MmSystemRangeStart)
+                {
+                    if (callback(ObCallback->PreCall, ctx))
+                        return STATUS_SUCCESS;
+                }
+            }
+        }
+        CurEntry = CurEntry->Flink;
+    } while (CurEntry != ListEntry);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS EnumThreadObCallbacks(EnumNotifyRoutineCallback callback, void *ctx, BOOLEAN IsPost)
+{
+    PLIST_ENTRY CurEntry;
+    PLIST_ENTRY ListEntry = NULL;
+    POBJECT_TYPE ObjType = *PsThreadType;
+
+    if (KphDynOsVersionInfo.dwBuildNumber >= 9200)
+    {
+        POBJECT_TYPE_WIN8 ObjectType = (POBJECT_TYPE_WIN8)ObjType;
+        ListEntry = (PLIST_ENTRY)&ObjectType->CallbackList;
+    }
+    else if (KphDynOsVersionInfo.dwBuildNumber >= 7600)
+    {
+        POBJECT_TYPE_WIN7 ObjectType = (POBJECT_TYPE_WIN7)ObjType;
+        ListEntry = (PLIST_ENTRY)&ObjectType->CallbackList;
+    }
+    else if (KphDynOsVersionInfo.dwBuildNumber >= 6000)
+    {
+        POBJECT_TYPE_VISTA ObjectType = (POBJECT_TYPE_VISTA)ObjType;
+        ListEntry = (PLIST_ENTRY)&ObjectType->CallbackList;
+    }
+
+    if (!ListEntry)
+        return STATUS_NOT_FOUND;
+
+    CurEntry = ListEntry->Flink;
+    do
+    {
+        POB_CALLBACK ObCallback = (POB_CALLBACK)CurEntry;
+        if (MmIsAddressValid(ObCallback))
+        {
+            if (ObCallback->ObHandle && ObCallback->ObjectType == ObjType)
+            {
+                if (IsPost && ObCallback->PostCall > MmSystemRangeStart)
+                {
+                    if (callback(ObCallback->PostCall, ctx))
+                        return STATUS_SUCCESS;
+                }
+                else if (!IsPost && ObCallback->PreCall > MmSystemRangeStart)
+                {
+                    if (callback(ObCallback->PreCall, ctx))
+                        return STATUS_SUCCESS;
+                }
+            }
+        }
+        CurEntry = CurEntry->Flink;
+    } while (CurEntry != ListEntry);
+
     return STATUS_SUCCESS;
 }
 
@@ -326,6 +902,7 @@ typedef struct _KpiEnumKernelCallbackContext
     ULONG *RequiredLength;
     NTSTATUS Status;
     ULONG CurrentEnumType;
+    ULONG CurrentEnumIndex;
 }KpiEnumKernelCallbackContext;
 
 BOOLEAN KpiEnumKernelCallback_Enumerator(PVOID NotifyRoutine, void *context)
@@ -350,7 +927,8 @@ BOOLEAN KpiEnumKernelCallback_Enumerator(PVOID NotifyRoutine, void *context)
             EntryInfo->NextEntryOffset = 0;
             EntryInfo->CallbackAddress = NotifyRoutine;
             EntryInfo->Type = ctx->CurrentEnumType;
-            EntryInfo->ImageBase = RtlPcToFileHeader(NotifyRoutine, &ImageBase2);
+            EntryInfo->Index = ctx->CurrentEnumIndex;
+            ctx->CurrentEnumIndex++;
         }
 
         if (NT_SUCCESS(ctx->Status)) {
@@ -408,10 +986,44 @@ NTSTATUS KpiEnumKernelCallback(
     ctx.Status = STATUS_SUCCESS;
 
     ctx.CurrentEnumType = KphCallbackPsCreateProcess;
-    st = EnumPsCreateProcessNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx);
+    ctx.CurrentEnumIndex = 0;
+    st = EnumPsCreateProcessNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx, 0);
+
+    ctx.CurrentEnumType = KphCallbackPsCreateProcessEx;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumPsCreateProcessNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx, 2);
+
+    ctx.CurrentEnumType = KphCallbackPsCreateProcessEx2;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumPsCreateProcessNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx, 6);
 
     ctx.CurrentEnumType = KphCallbackPsLoadImage;
-    st = EnumPsLoadImageNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx);
+    ctx.CurrentEnumIndex = 0;
+    st = EnumPsLoadImageNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx, 0);
+
+    ctx.CurrentEnumType = KphCallbackPsLoadImageEx;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumPsLoadImageNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx, 1);
+
+    ctx.CurrentEnumType = KphCallbackCmRegistry;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumCmRegistryCallbacks(KpiEnumKernelCallback_Enumerator, &ctx);
+
+    ctx.CurrentEnumType = KphCallbackObProcessPre;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumProcessObCallbacks(KpiEnumKernelCallback_Enumerator, &ctx, FALSE);
+
+    ctx.CurrentEnumType = KphCallbackObProcessPost;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumProcessObCallbacks(KpiEnumKernelCallback_Enumerator, &ctx, TRUE);
+
+    ctx.CurrentEnumType = KphCallbackObThreadPre;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumThreadObCallbacks(KpiEnumKernelCallback_Enumerator, &ctx, FALSE);
+
+    ctx.CurrentEnumType = KphCallbackObThreadPost;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumThreadObCallbacks(KpiEnumKernelCallback_Enumerator, &ctx, TRUE);
 
     if (!NT_SUCCESS(st))
         ctx.Status = st;

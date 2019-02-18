@@ -107,8 +107,17 @@ typedef struct _DRIVER_SERVICE_KEY_NAME_INFORMATION
 typedef enum _KPH_KERNEL_CALLBACK_TYPE
 {
     KphCallbackPsCreateProcess,
+    KphCallbackPsCreateProcessEx,
+    KphCallbackPsCreateProcessEx2,
     KphCallbackPsCreateThread,
+    KphCallbackPsCreateThreadEx,
     KphCallbackPsLoadImage,
+    KphCallbackPsLoadImageEx,
+    KphCallbackCmRegistry,
+    KphCallbackObProcessPre,
+    KphCallbackObProcessPost,
+    KphCallbackObThreadPre,
+    KphCallbackObThreadPost,
     KphMaxKernelCallbackType
 } KPH_KERNEL_CALLBACK_TYPE;
 
@@ -117,7 +126,7 @@ typedef struct _KPH_ENUM_CALLBACK_ENTRY
     ULONG NextEntryOffset;
     PVOID CallbackAddress;
     ULONG Type;
-    PVOID ImageBase;
+    ULONG Index;
 }KPH_ENUM_CALLBACK_ENTRY, *PKPH_ENUM_CALLBACK_ENTRY;
 
 // ETW registration object information

@@ -28,6 +28,7 @@ PVOID PspCreateProcessNotifyRoutine = NULL;
 ULONG PspCreateProcessNotifyRoutineMaxCount = 0;
 PVOID PspLoadImageNotifyRoutine = NULL;
 ULONG PspLoadImageNotifyRoutineMaxCount = 0;
+PVOID CmCallbackListHead =NULL;
 MemoryRange_t NtosRange = { 0 };
 MemoryRange_t ThisRange = { 0 };
 
@@ -35,6 +36,7 @@ NTSTATUS KphEnumSystemModules(EnumSystemModuleCallback callback, PVOID Context);
 BOOLEAN KphInitGetKernelInfo(PRTL_PROCESS_MODULE_INFORMATION pMod, PVOID checkPtr);
 VOID KphGetPspCreateProcessNotifyRoutine(VOID);
 VOID KphGetPspLoadImageNotifyRoutine(VOID);
+VOID KphGetCmCallback(VOID);
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, KphGetSystemRoutineAddress)
@@ -43,6 +45,7 @@ VOID KphGetPspLoadImageNotifyRoutine(VOID);
 #pragma alloc_text(PAGE, KphEnumSystemModules)
 #pragma alloc_text(INIT, KphGetPspCreateProcessNotifyRoutine)
 #pragma alloc_text(INIT, KphGetPspLoadImageNotifyRoutine)
+#pragma alloc_text(INIT, KphGetCmCallback)
 #endif
 
 /**
@@ -56,6 +59,7 @@ VOID KphDynamicImport(
     KphEnumSystemModules(KphInitGetKernelInfo, NULL);
     KphGetPspCreateProcessNotifyRoutine();
     KphGetPspLoadImageNotifyRoutine();
+    KphGetCmCallback();
 }
 
 /**
@@ -530,4 +534,184 @@ VOID KphGetPspCreateProcessNotifyRoutine(VOID)
 
     dprintf("PspCreateProcessNotifyRoutine %p\n", PspCreateProcessNotifyRoutine);
     dprintf("PspCreateProcessNotifyRoutineMaxCount %d\n", PspCreateProcessNotifyRoutineMaxCount);
+}
+
+typedef struct
+{
+#ifdef _WIN64
+    int Lea_Rcx_InstCount;
+    PVOID Lea_Rcx_Candidate;
+#else
+    int Mov_Exi_InstCount;
+    PVOID Mov_Exi_Candidate;
+#endif
+    int Call_GetNext_InstCount;
+}KphGetCmCallbackNT6_Context;
+
+BOOLEAN KphGetCmCallback_CheckCmListGetNextElement(cs_insn *inst, PUCHAR pAddress, size_t instLen, int instCount, PVOID context)
+{
+    //HYPERPLATFORM_LOG_INFO_SAFE("walk %p, %d %d %02X %02X %02X %02X %02X", pAddress, instCount, instLen, inst->bytes[0], inst->bytes[1], inst->bytes[2], inst->bytes[3], inst->bytes[4]);
+#ifdef _WIN64
+    //48 83 3A 00                                         cmp     qword ptr [rdx], 0
+    if (inst->id == X86_INS_CMP && inst->detail->x86.op_count == 2
+        && inst->detail->x86.operands[0].type == X86_OP_MEM && inst->detail->x86.operands[1].type == X86_OP_IMM && inst->detail->x86.operands[0].size == 8
+        && (x86_reg)inst->detail->x86.operands[0].mem.base == X86_REG_RDX && inst->detail->x86.operands[1].imm == 0)
+    {
+        //HYPERPLATFORM_LOG_INFO_SAFE("CmListGetNextElement detected");
+        return TRUE;
+    }
+    //49 63 C8                                            movsxd  rcx, r8d
+    if (!memcmp(pAddress, "\x49\x63\xC8", 3))
+    {
+        return TRUE;
+    }
+#else
+    //83 39 00                                            cmp     dword ptr [ecx], 0
+    if (inst->id == X86_INS_CMP && inst->detail->x86.op_count == 2
+        && inst->detail->x86.operands[0].type == X86_OP_MEM && inst->detail->x86.operands[1].type == X86_OP_IMM && inst->detail->x86.operands[0].size == 4
+        && IsCommonRegister((x86_reg)inst->detail->x86.operands[0].mem.base) && inst->detail->x86.operands[1].imm == 0)
+    {
+        //HYPERPLATFORM_LOG_INFO_SAFE("CmListGetNextElement detected");
+        return TRUE;
+    }
+
+#endif
+    return FALSE;
+}
+
+BOOLEAN KphGetCmCallback_FindNT6(cs_insn *inst, PUCHAR pAddress, size_t instLen, int instCount, PVOID context)
+{
+    //HYPERPLATFORM_LOG_INFO_SAFE("KphGetCmCallback_FindNT6 %p, %d %d %02X %02X %02X %02X %02X", pAddress, instCount, instLen, inst->bytes[0], inst->bytes[1], inst->bytes[2], inst->bytes[3], inst->bytes[4]);
+
+    KphGetCmCallbackNT6_Context * ctx = (KphGetCmCallbackNT6_Context *)context;
+
+#ifdef _WIN64
+    //48 8D 0D B3 27 D2 FF                                lea     rcx, CallbackListHead
+    if (inst->id == X86_INS_LEA && inst->detail->x86.op_count == 2
+        && inst->detail->x86.operands[0].type == X86_OP_REG && inst->detail->x86.operands[1].type == X86_OP_MEM
+        && inst->detail->x86.operands[0].reg == X86_REG_RCX && (x86_reg)inst->detail->x86.operands[1].mem.base == X86_REG_RIP)
+    {
+        PVOID imm = (PVOID)(pAddress + instLen + (int)inst->detail->x86.operands[1].mem.disp);
+        if (IsInMemoryRange(imm, &NtosRange))
+        {
+            //HYPERPLATFORM_LOG_INFO_SAFE("lea found");
+
+            ctx->Lea_Rcx_InstCount = instCount;
+            ctx->Lea_Rcx_Candidate = imm;
+            return FALSE;
+        }
+    }
+
+    //E8 A2 61 E5 FF                                      call    CmListGetNextElement
+    if (!ctx->Call_GetNext_InstCount && ctx->Lea_Rcx_InstCount
+        && instCount - ctx->Lea_Rcx_InstCount < 10 &&
+        instLen == 5 && pAddress[0] == 0xE8)
+    {
+        PVOID CallTarget = (PVOID)(pAddress + 5 + *(int *)(pAddress + 1));;
+        if (IsInMemoryRange(CallTarget, &NtosRange))
+        {
+            if (DisasmRanges(CallTarget, 30, KphGetCmCallback_CheckCmListGetNextElement, NULL))
+            {
+                //HYPERPLATFORM_LOG_INFO_SAFE("call found");
+
+                ctx->Call_GetNext_InstCount = instCount;
+                CmCallbackListHead = ctx->Lea_Rcx_Candidate;
+                //stop searching
+                return TRUE;
+            }
+            else
+            {
+                ctx->Lea_Rcx_InstCount = 0;
+                ctx->Lea_Rcx_Candidate = 0;
+            }
+        }
+    }
+#else
+    //BE F0 B2 52 00                                      mov     esi, offset _CallbackListHead
+    //B9 40 CF 60 00                                      mov     ecx, offset _CallbackListHead
+    //BF D0 E1 55 00                                      mov     edi, offset _CallbackListHead
+    if (inst->id == X86_INS_MOV && inst->detail->x86.op_count == 2
+        && inst->detail->x86.operands[0].type == X86_OP_REG && inst->detail->x86.operands[1].type == X86_OP_IMM
+        && IsCommonRegister(inst->detail->x86.operands[0].reg))
+    {
+        PVOID imm = (PVOID)(ULONG_PTR)inst->detail->x86.operands[1].imm;
+        if (IsInMemoryRange(imm, &NtosRange))
+        {
+            //HYPERPLATFORM_LOG_INFO("mov found");
+            ctx->Mov_Exi_InstCount = instCount;
+            ctx->Mov_Exi_Candidate = imm;
+            return FALSE;
+        }
+    }
+
+    //E8 08 0B F4 FF                                      call    _CmListGetNextElement@12
+    if (!ctx->Call_GetNext_InstCount && ctx->Mov_Exi_InstCount
+        && instCount - ctx->Mov_Exi_InstCount < 15 &&
+        instLen == 5 && pAddress[0] == 0xE8)
+    {
+        PVOID CallTarget = (PVOID)(pAddress + 5 + *(int *)(pAddress + 1));;
+        if (IsInMemoryRange(CallTarget, &NtosRange))
+        {
+            //HYPERPLATFORM_LOG_INFO("call found");
+            if (DisasmRanges(CallTarget, 30, KphGetCmCallback_CheckCmListGetNextElement, NULL))
+            {
+                ctx->Call_GetNext_InstCount = instCount;
+                CmCallbackListHead = ctx->Mov_Exi_Candidate;
+                //stop searching
+                return TRUE;
+            }
+            else
+            {
+                ctx->Mov_Exi_InstCount = 0;
+                ctx->Mov_Exi_Candidate = 0;
+            }
+        }
+    }
+
+#endif
+
+    if (inst->id == X86_INS_RET)
+    {
+        //HYPERPLATFORM_LOG_INFO_SAFE("walk ret");
+        return TRUE;
+    }
+
+    if (instLen == 1 && (inst->bytes[0] == 0xCC || inst->bytes[0] == 0x90))
+    {
+        //HYPERPLATFORM_LOG_INFO_SAFE("walk cc 90");
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+VOID KphGetCmCallback(VOID)
+{
+    PUCHAR CmUnReg = (PUCHAR)KphGetSystemRoutineAddress(L"CmUnRegisterCallback");
+
+    if (!CmUnReg)
+        return;
+
+    if (KphDynOsVersionInfo.dwBuildNumber >= 6000)
+    {
+        KphGetCmCallbackNT6_Context ctx;
+#ifdef _WIN64
+        ctx.Lea_Rcx_InstCount = 0;
+        ctx.Lea_Rcx_Candidate = NULL;
+#else
+        ctx.Mov_Exi_InstCount = 0;
+        ctx.Mov_Exi_Candidate = NULL;
+#endif
+        ctx.Call_GetNext_InstCount = 0;
+
+        DisasmRanges(CmUnReg, 0x100, KphGetCmCallback_FindNT6, &ctx);
+
+        if (!CmCallbackListHead)
+        {
+            dprintf("CmCallbackListHead not found\n");
+            return;
+        }
+
+        dprintf("CmCallbackListHead %p\n", CmCallbackListHead);
+    }
 }

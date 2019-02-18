@@ -7,6 +7,246 @@ extern ULONG KphDynObAttributesShift;
 
 // EX
 
+#if defined (_WIN64)
+#define MAX_FAST_REFS 15
+#else
+#define MAX_FAST_REFS 7
+#endif
+
+typedef struct _EX_FAST_REF {
+    union {
+        PVOID Object;
+#if defined (_WIN64)
+        ULONG_PTR RefCnt : 4;
+#else
+        ULONG_PTR RefCnt : 3;
+#endif
+        ULONG_PTR Value;
+    };
+} EX_FAST_REF, *PEX_FAST_REF;
+
+typedef struct _EX_CALLBACK {
+    EX_FAST_REF RoutineBlock;
+} EX_CALLBACK, *PEX_CALLBACK;
+
+typedef struct _EX_CALLBACK_ROUTINE_BLOCK {
+    EX_RUNDOWN_REF        RundownProtect;
+    PEX_CALLBACK_FUNCTION Function;
+    PVOID                 Context;
+} EX_CALLBACK_ROUTINE_BLOCK, *PEX_CALLBACK_ROUTINE_BLOCK;
+
+typedef struct _CM_NOTIFY_ENTRY
+{
+    LIST_ENTRY  ListEntryHead;	//+0
+    ULONG   RefCount;			//+16
+    ULONG   Altitude;
+    LARGE_INTEGER   Cookie;		//+24
+    PVOID	Context;			//+32
+    PVOID	Function;			//+40
+}CM_NOTIFY_ENTRY, *PCM_NOTIFY_ENTRY;
+
+typedef struct _OB_CALLBACK
+{
+    LIST_ENTRY  ListEntry;
+    OB_OPERATION Operations;
+    ULONG Active;
+    PVOID ObHandle;
+    PVOID ObjectType;
+    PVOID PreCall;
+    PVOID PostCall;
+    EX_RUNDOWN_REF RundownProtection;
+} OB_CALLBACK, *POB_CALLBACK;
+
+typedef VOID(*PDEBUG_PRINT_CALLBACK) (
+    _In_ PSTRING Output,
+    _In_ ULONG ComponentId,
+    _In_ ULONG Level);
+
+typedef struct _DBG_CALLBACK
+{
+    EX_RUNDOWN_REF RundownProtection;
+    PDEBUG_PRINT_CALLBACK Callback;
+    LIST_ENTRY ListEntry;
+}DBG_CALLBACK, *PDBG_CALLBACK;
+
+typedef struct _OBJECT_HEADER_CREATOR_INFO
+{
+    LIST_ENTRY TypeList;
+    PVOID CreatorUniqueProcess;
+    USHORT CreatorBackTraceIndex;
+    USHORT Reserved;
+}OBJECT_HEADER_CREATOR_INFO, *POBJECT_HEADER_CREATOR_INFO;
+
+typedef struct _OBJECT_TYPE_INITIALIZER_XP
+{
+    USHORT Length;
+    CHAR UseDefaultObject;
+    CHAR CaseInsensitive;
+    ULONG InvalidAttributes;
+    GENERIC_MAPPING GenericMapping;
+    ULONG ValidAccessMask;
+    CHAR SecurityRequired;
+    CHAR MaintainHandleCount;
+    CHAR MaintainTypeList;
+    POOL_TYPE PoolType;
+    ULONG DefaultPagedPoolCharge;
+    ULONG DefaultNonPagedPoolCharge;
+    PVOID DumpProcedure;
+    PVOID OpenProcedure;
+    PVOID CloseProcedure;
+    PVOID DeleteProcedure;
+    PVOID ParseProcedure;
+    PVOID SecurityProcedure;
+    PVOID QueryNameProcedure;
+    PVOID OkayToCloseProcedure;
+}OBJECT_TYPE_INITIALIZER_XP, *POBJECT_TYPE_INITIALIZER_XP;
+
+typedef struct _OBJECT_TYPE_INITIALIZER_WIN7
+{
+    USHORT Length;
+    union
+    {
+        CHAR ObjectTypeFlags;
+        struct
+        {
+            CHAR CaseInsensitive : 1;
+            CHAR UnnamedObjectsOnly : 1;
+            CHAR UseDefaultObject : 1;
+            CHAR SecurityRequired : 1;
+            CHAR MaintainHandleCount : 1;
+            CHAR MaintainTypeList : 1;
+            CHAR SupportsObjectCallbacks : 1;
+        }s1;
+    }u1;
+    ULONG ObjectTypeCode;
+    ULONG InvalidAttributes;
+    GENERIC_MAPPING GenericMapping;
+    ULONG ValidAccessMask;
+    ULONG RetainAccess;
+    POOL_TYPE PoolType;
+    ULONG DefaultPagedPoolCharge;
+    ULONG DefaultNonPagedPoolCharge;
+    PVOID DumpProcedure;
+    PVOID OpenProcedure;
+    PVOID CloseProcedure;
+    PVOID DeleteProcedure;
+    PVOID ParseProcedure;
+    PVOID SecurityProcedure;
+    PVOID QueryNameProcedure;
+    PVOID OkayToCloseProcedure;
+} OBJECT_TYPE_INITIALIZER_WIN7, *POBJECT_TYPE_INITIALIZER_WIN7;
+
+typedef OBJECT_TYPE_INITIALIZER_WIN7 OBJECT_TYPE_INITIALIZER_VISTA, *POBJECT_TYPE_INITIALIZER_VISTA;
+
+typedef struct _OBJECT_TYPE_INITIALIZER_WIN8
+{
+    USHORT Length;
+    USHORT ObjectTypeFlags;
+    ULONG ObjectTypeCode;
+    ULONG InvalidAttributes;
+    GENERIC_MAPPING GenericMapping;
+    ULONG ValidAccessMask;
+    ULONG RetainAccess;
+    POOL_TYPE PoolType;
+    ULONG DefaultPagedPoolCharge;
+    ULONG DefaultNonPagedPoolCharge;
+    PVOID DumpProcedure;
+    PVOID OpenProcedure;
+    PVOID CloseProcedure;
+    PVOID DeleteProcedure;
+    PVOID ParseProcedure;
+    PVOID SecurityProcedure;
+    PVOID QueryNameProcedure;
+    PVOID OkayToCloseProcedure;
+    ULONG WaitObjectFlagMask;
+    USHORT WaitObjectFlagOffset;
+    USHORT WaitObjectPointerOffset;
+} OBJECT_TYPE_INITIALIZER_WIN8, *POBJECT_TYPE_INITIALIZER_WIN8;
+
+typedef struct _OBJECT_TYPE_XP
+{
+    ERESOURCE Mutex;
+    LIST_ENTRY TypeList;
+    UNICODE_STRING Name;
+    PVOID DefaultObject;
+    ULONG Index;
+    ULONG TotalNumberOfObjects;
+    ULONG TotalNumberOfHandles;
+    ULONG HighWaterNumberOfObjects;
+    ULONG HighWaterNumberOfHandles;
+    OBJECT_TYPE_INITIALIZER_XP TypeInfo;
+    ULONG Key;
+    ERESOURCE ObjectLocks[4];
+}OBJECT_TYPE_XP, *POBJECT_TYPE_XP;
+
+typedef struct _OBJECT_TYPE_VISTA
+{
+    LIST_ENTRY TypeList;
+    UNICODE_STRING Name;
+    PVOID DefaultObject;
+    ULONG Index;
+    ULONG TotalNumberOfObjects;
+    ULONG TotalNumberOfHandles;
+    ULONG HighWaterNumberOfObjects;
+    ULONG HighWaterNumberOfHandles;
+#ifdef _WIN64
+    ULONG Padding;
+#endif
+    OBJECT_TYPE_INITIALIZER_VISTA TypeInfo;
+    ERESOURCE Mutex;
+    EX_PUSH_LOCK TypeLock;
+    ULONG Key;
+    EX_PUSH_LOCK ObjectLocks[32];
+    LIST_ENTRY CallbackList;
+} OBJECT_TYPE_VISTA, *POBJECT_TYPE_VISTA;
+
+typedef struct _OBJECT_TYPE_WIN7
+{
+    LIST_ENTRY TypeList;
+    UNICODE_STRING Name;
+    PVOID DefaultObject;
+    CHAR Index;
+    ULONG TotalNumberOfObjects;
+    ULONG TotalNumberOfHandles;
+    ULONG HighWaterNumberOfObjects;
+    ULONG HighWaterNumberOfHandles;
+#ifdef _WIN64
+    ULONG Padding;
+#endif
+    OBJECT_TYPE_INITIALIZER_WIN7 TypeInfo;
+    EX_PUSH_LOCK TypeLock;
+    ULONG Key;
+    LIST_ENTRY CallbackList;
+} OBJECT_TYPE_WIN7, *POBJECT_TYPE_WIN7;
+
+typedef struct _OBJECT_TYPE_WIN8
+{
+    LIST_ENTRY TypeList;
+    UNICODE_STRING Name;
+    PVOID DefaultObject;
+    CHAR Index;
+    ULONG TotalNumberOfObjects;
+    ULONG TotalNumberOfHandles;
+    ULONG HighWaterNumberOfObjects;
+    ULONG HighWaterNumberOfHandles;
+#ifdef _WIN64
+    ULONG Padding;
+#endif
+    OBJECT_TYPE_INITIALIZER_WIN8 TypeInfo;
+    EX_PUSH_LOCK TypeLock;
+    ULONG Key;
+    LIST_ENTRY CallbackList;
+} OBJECT_TYPE_WIN8, *POBJECT_TYPE_WIN8;
+
+#define OBJECT_TO_OBJECT_HEADER_XP( o ) \
+    CONTAINING_RECORD( (o), OBJECT_HEADER_XP, Body )
+
+#define OBJECT_TO_OBJECT_HEADER_VISTA( o ) \
+    CONTAINING_RECORD( (o), OBJECT_HEADER_VISTA, Body )
+
+#define OBJECT_TO_OBJECT_HEADER_WIN7( o ) \
+    CONTAINING_RECORD( (o), OBJECT_HEADER_WIN7, Body )
+
 typedef struct _EX_PUSH_LOCK_WAIT_BLOCK *PEX_PUSH_LOCK_WAIT_BLOCK;
 
 NTKERNELAPI
