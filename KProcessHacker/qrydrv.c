@@ -735,6 +735,35 @@ NTSTATUS EnumPsCreateProcessNotifyRoutines(EnumNotifyRoutineCallback callback, v
     return STATUS_SUCCESS;
 }
 
+NTSTATUS EnumPsCreateThreadNotifyRoutines(EnumNotifyRoutineCallback callback, void *ctx, int flags)
+{
+    PVOID MagicPtr, Point, NotifyAddr;
+
+    if (!PspCreateThreadNotifyRoutine)
+        return STATUS_NOT_FOUND;
+
+    int maxCount = PspCreateThreadNotifyRoutineMaxCount ? PspCreateThreadNotifyRoutineMaxCount : 8;
+
+    PEX_CALLBACK Psp = (PEX_CALLBACK)PspCreateThreadNotifyRoutine;
+
+    for (int i = 0; i < maxCount; i++)
+    {
+        PEX_CALLBACK_ROUTINE_BLOCK CallBack = ExReferenceCallBackBlock(&Psp[i]);
+        if (CallBack != NULL) {
+            PVOID Routine = ExGetCallBackBlockRoutine(CallBack);
+            int CallbackFlags = (int)(ULONG_PTR)ExGetCallBackBlockContext(CallBack);
+            if (Routine > MmSystemRangeStart && CallbackFlags == flags && callback(Routine, ctx))
+            {
+                ExDereferenceCallBackBlock(&Psp[i], CallBack);
+                break;
+            }
+            ExDereferenceCallBackBlock(&Psp[i], CallBack);
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS EnumPsLoadImageNotifyRoutines(EnumNotifyRoutineCallback callback, void *ctx, int flags)
 {
     PVOID MagicPtr, Point, NotifyAddr;
@@ -752,7 +781,7 @@ NTSTATUS EnumPsLoadImageNotifyRoutines(EnumNotifyRoutineCallback callback, void 
         if (CallBack != NULL) {
             PVOID Routine = ExGetCallBackBlockRoutine(CallBack);
             int CallbackFlags = (int)(ULONG_PTR)ExGetCallBackBlockContext(CallBack);
-            if (Routine > MmSystemRangeStart && callback(Routine, ctx))
+            if (Routine > MmSystemRangeStart && CallbackFlags == flags && callback(Routine, ctx))
             {
                 ExDereferenceCallBackBlock(&Psp[i], CallBack);
                 break;
@@ -892,6 +921,40 @@ NTSTATUS EnumThreadObCallbacks(EnumNotifyRoutineCallback callback, void *ctx, BO
     return STATUS_SUCCESS;
 }
 
+NTSTATUS EnumerateDbgCallback(EnumNotifyRoutineCallback callback, void *ctx)
+{
+    if (!RtlpDebugPrintCallbackLock)
+        return STATUS_NOT_FOUND;
+
+    if (!RtlpDebugPrintCallbackList)
+        return STATUS_NOT_FOUND;
+
+    ExAcquireSpinLockSharedAtDpcLevel((PEX_SPIN_LOCK)RtlpDebugPrintCallbackLock);
+    PLIST_ENTRY pEntry = (PLIST_ENTRY)RtlpDebugPrintCallbackList;
+    while (1)
+    {
+        pEntry = pEntry->Flink;
+        if (pEntry == RtlpDebugPrintCallbackList)
+            break;
+
+        PDBG_CALLBACK pDbgCallback = (PDBG_CALLBACK)CONTAINING_RECORD(pEntry, DBG_CALLBACK, ListEntry);
+
+        if (ExAcquireRundownProtection(&pDbgCallback->RundownProtection))
+        {
+            if (callback(pDbgCallback->Callback, ctx))
+            {
+                ExReleaseRundownProtection(&pDbgCallback->RundownProtection);
+                ExReleaseSpinLockSharedFromDpcLevel((PEX_SPIN_LOCK)RtlpDebugPrintCallbackLock);
+                return STATUS_SUCCESS;
+            }
+            ExReleaseRundownProtection(&pDbgCallback->RundownProtection);
+        }
+    }
+    ExReleaseSpinLockSharedFromDpcLevel((PEX_SPIN_LOCK)RtlpDebugPrintCallbackLock);
+
+    return STATUS_SUCCESS;
+}
+
 typedef struct _KpiEnumKernelCallbackContext
 {
     PVOID UserBuffer;
@@ -997,6 +1060,18 @@ NTSTATUS KpiEnumKernelCallback(
     ctx.CurrentEnumIndex = 0;
     st = EnumPsCreateProcessNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx, 6);
 
+    ctx.CurrentEnumType = KphCallbackPsCreateThread;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumPsCreateThreadNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx, 0);
+
+    ctx.CurrentEnumType = KphCallbackPsCreateThreadExNonSystem;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumPsCreateThreadNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx, 1);
+
+    ctx.CurrentEnumType = KphCallbackPsCreateThreadExSubSystems;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumPsCreateThreadNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx, 2);
+
     ctx.CurrentEnumType = KphCallbackPsLoadImage;
     ctx.CurrentEnumIndex = 0;
     st = EnumPsLoadImageNotifyRoutines(KpiEnumKernelCallback_Enumerator, &ctx, 0);
@@ -1024,6 +1099,10 @@ NTSTATUS KpiEnumKernelCallback(
     ctx.CurrentEnumType = KphCallbackObThreadPost;
     ctx.CurrentEnumIndex = 0;
     st = EnumThreadObCallbacks(KpiEnumKernelCallback_Enumerator, &ctx, TRUE);
+
+    ctx.CurrentEnumType = KphCallbackDbgPrint;
+    ctx.CurrentEnumIndex = 0;
+    st = EnumerateDbgCallback(KpiEnumKernelCallback_Enumerator, &ctx);
 
     if (!NT_SUCCESS(st))
         ctx.Status = st;

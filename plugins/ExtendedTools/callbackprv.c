@@ -211,27 +211,35 @@ NTSTATUS EtGetCallbackInformationEnumerate(PRTL_PROCESS_MODULES kernelModules)
 NTSTATUS EtGetCallbackInformation(VOID)
 {
     NTSTATUS st;
-    PET_CALLBACK_ITEM callbackItem;
+    PET_CALLBACK_ITEM *callbackItem;
     ULONG enumerationKey;    
     PRTL_PROCESS_MODULES kernelModules = NULL;
 
     PhEnumKernelModules(&kernelModules);
 
     enumerationKey = 0;
+    callbackItem = NULL;
+    PhAcquireQueuedLockShared(&EtCallbackHashtableLock);
     while (PhEnumHashtable(EtCallbackHashtable, (PVOID *)&callbackItem, &enumerationKey))
     {
-        callbackItem->Alive = FALSE;
+        (*callbackItem)->Alive = FALSE;
     }
+    PhReleaseQueuedLockShared(&EtCallbackHashtableLock);
 
     st = EtGetCallbackInformationEnumerate(kernelModules);
 
     enumerationKey = 0;
+    callbackItem = NULL;
+    PhAcquireQueuedLockShared(&EtCallbackHashtableLock);
     while (PhEnumHashtable(EtCallbackHashtable, (PVOID *)&callbackItem, &enumerationKey))
     {
-        if (!callbackItem->Alive)
-            EtpRemoveCallbackItem(callbackItem);
+        if (!(*callbackItem)->Alive)
+        {
+            EtpRemoveCallbackItem(*callbackItem);
+            PhInvokeCallback(&EtCallbackItemRemovedEvent, *callbackItem);
+        }
     }
-
+    PhReleaseQueuedLockShared(&EtCallbackHashtableLock);
     if(kernelModules)
         PhFree(kernelModules);
 

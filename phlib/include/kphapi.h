@@ -110,7 +110,8 @@ typedef enum _KPH_KERNEL_CALLBACK_TYPE
     KphCallbackPsCreateProcessEx,
     KphCallbackPsCreateProcessEx2,
     KphCallbackPsCreateThread,
-    KphCallbackPsCreateThreadEx,
+    KphCallbackPsCreateThreadExNonSystem,
+    KphCallbackPsCreateThreadExSubSystems,
     KphCallbackPsLoadImage,
     KphCallbackPsLoadImageEx,
     KphCallbackCmRegistry,
@@ -118,6 +119,7 @@ typedef enum _KPH_KERNEL_CALLBACK_TYPE
     KphCallbackObProcessPost,
     KphCallbackObThreadPre,
     KphCallbackObThreadPost,
+    KphCallbackDbgPrint,
     KphMaxKernelCallbackType
 } KPH_KERNEL_CALLBACK_TYPE;
 

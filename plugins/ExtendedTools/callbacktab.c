@@ -495,14 +495,17 @@ BOOLEAN NTAPI EtpCallbackTreeNewCallback(
             case KphCallbackPsCreateThread:
                 PhInitializeStringRef(&getCellText->Text, L"CreateThread");
                 break;
-            case KphCallbackPsCreateThreadEx:
-                PhInitializeStringRef(&getCellText->Text, L"CreateThreadEx");
+            case KphCallbackPsCreateThreadExNonSystem:
+                PhInitializeStringRef(&getCellText->Text, L"CreateThreadEx (NonSystem)");
+                break;
+            case KphCallbackPsCreateThreadExSubSystems:
+                PhInitializeStringRef(&getCellText->Text, L"CreateThreadEx (SubSystems)");
                 break;
             case KphCallbackPsLoadImage:
                 PhInitializeStringRef(&getCellText->Text, L"LoadImage");
                 break;
             case KphCallbackPsLoadImageEx:
-                PhInitializeStringRef(&getCellText->Text, L"LoadImageEx (PS_IMAGE_NOTIFY_CONFLICTING_ARCHITECTURE)");
+                PhInitializeStringRef(&getCellText->Text, L"LoadImageEx");
                 break;
             case KphCallbackCmRegistry:
                 PhInitializeStringRef(&getCellText->Text, L"CmRegistry");
@@ -518,6 +521,9 @@ BOOLEAN NTAPI EtpCallbackTreeNewCallback(
                 break;
             case KphCallbackObThreadPost:
                 PhInitializeStringRef(&getCellText->Text, L"ObThread (Post)");
+                break;
+            case KphCallbackDbgPrint:
+                PhInitializeStringRef(&getCellText->Text, L"DbgPrint");
                 break;
             default:
                 PhInitializeStringRef(&getCellText->Text, L"Unknown");
@@ -1037,6 +1043,9 @@ BOOLEAN NTAPI EtpSearchCallbackListFilterCallback(
         return TRUE;
 
     if (wordMatch(&callbackNode->CallbackItem->ImageNameWin32->sr))
+        return TRUE;
+
+    if (wordMatch(&callbackNode->CallbackItem->CallbackAddressString->sr))
         return TRUE;
 
     return FALSE;

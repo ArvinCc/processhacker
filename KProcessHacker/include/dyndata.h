@@ -38,9 +38,13 @@ EXT ULONG KphDynObAttributesShift OFFDEFAULT;
 
 EXT PVOID PspCreateProcessNotifyRoutine;
 EXT ULONG PspCreateProcessNotifyRoutineMaxCount;
+EXT PVOID PspCreateThreadNotifyRoutine;
+EXT ULONG PspCreateThreadNotifyRoutineMaxCount;
 EXT PVOID PspLoadImageNotifyRoutine;
 EXT ULONG PspLoadImageNotifyRoutineMaxCount;
 EXT PVOID CmCallbackListHead;
+EXT PKSPIN_LOCK RtlpDebugPrintCallbackLock;
+EXT PLIST_ENTRY RtlpDebugPrintCallbackList;
 EXT MemoryRange_t NtosRange;
 EXT MemoryRange_t ThisRange;
 

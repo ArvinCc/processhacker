@@ -437,5 +437,6 @@ typedef struct MemoryRange_s
 
 typedef BOOLEAN(*EnumSystemModuleCallback)(PRTL_PROCESS_MODULE_INFORMATION, void *);
 typedef BOOLEAN(*EnumNotifyRoutineCallback)(PVOID, void *);
+typedef VOID(*LoadModFileCallback)(PVOID Buffer, SIZE_T BufferSize, void *);
 
 #endif
