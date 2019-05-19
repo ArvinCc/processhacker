@@ -27,7 +27,8 @@ typedef enum _PH_MEMORY_REGION_TYPE
     ApiSetMapRegion,
     HypervisorSharedDataRegion,
     KernelRegionBegin,
-    KernelBigPoolRegion = KernelRegionBegin,
+    KernelBigNonPagedPoolRegion = KernelRegionBegin,
+    KernelBigPagedPoolRegion
 } PH_MEMORY_REGION_TYPE;
 
 typedef struct _PH_MEMORY_ITEM

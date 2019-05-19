@@ -498,8 +498,10 @@ PPH_STRING PhGetMemoryRegionUseText(
             type == CfgBitmap32Region ? L" 32-bit" : L"");
     case ApiSetMapRegion:
         return PhFormatString(L"ApiSetMap");
-    case KernelBigPoolRegion:
-        return PhFormatString(L"BigPool");
+    case KernelBigNonPagedPoolRegion:
+        return PhFormatString(L"BigNonPagedPool");
+    case KernelBigPagedPoolRegion:
+        return PhFormatString(L"BigPagedPool");
     default:
         return PhReferenceEmptyString();
     }

@@ -295,8 +295,8 @@ EXPORTS
     PhListenNamedPipe
     PhOpenKey
     PhLoadAppKey
-    PhOpenProcess = PhOpenProcessPublic
-    PhOpenThread = PhOpenThreadPublic
+    ;PhOpenProcess = PhOpenProcessPublic
+    ;PhOpenThread = PhOpenThreadPublic
     PhOpenThreadProcess
     PhPeekNamedPipe
     PhQueryFullAttributesFileWin32
@@ -309,7 +309,7 @@ EXPORTS
     PhSetTokenPrivilege
     PhSetTokenPrivilege2
     PhSetTokenSessionId
-    PhTerminateProcess = PhTerminateProcessPublic
+    ;PhTerminateProcess = PhTerminateProcessPublic
     PhTransceiveNamedPipe
     PhUnloadDllProcess
     PhUnloadDriver
@@ -526,8 +526,8 @@ EXPORTS
     PhGetDialogItemValue
     PhSetDialogItemValue
     PhSetDialogItemText
-    PhApplicationFont
-    PhTreeWindowFont
+    ;PhApplicationFont
+    ;PhTreeWindowFont
     PhRegisterWindowCallback
     PhUnregisterWindowCallback
     PhInitializeWindowTheme

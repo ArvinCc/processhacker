@@ -767,7 +767,7 @@ NTSTATUS PhpQueryKernelBigPoolMemoryItemList(_In_ ULONG Flags,
             otherMemoryItem->Protect = PAGE_EXECUTE_READWRITE;
             otherMemoryItem->State = 0;
             otherMemoryItem->Type = 0;
-            otherMemoryItem->RegionType = KernelBigPoolRegion;
+            otherMemoryItem->RegionType = pInfo->AllocatedInfo[i].NonPaged ? KernelBigNonPagedPoolRegion : KernelBigPagedPoolRegion;
             otherMemoryItem->AllocationBaseItem = otherMemoryItem;
 
             PhAddElementAvlTree(&List->Set, &otherMemoryItem->Links);

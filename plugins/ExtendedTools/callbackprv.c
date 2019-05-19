@@ -198,7 +198,7 @@ NTSTATUS EtGetCallbackInformationEnumerate(PRTL_PROCESS_MODULES kernelModules)
 
             pInfo = (PKPH_ENUM_CALLBACK_ENTRY)(((PUCHAR)pInfo) + pInfo->NextEntryOffset);
 
-            if ((PUCHAR)pInfo - (PUCHAR)pBuffer >= cbReturn)
+            if ((SIZE_T)((PUCHAR)pInfo - (PUCHAR)pBuffer) >= (SIZE_T)cbReturn)
                 break;
         }
     }
